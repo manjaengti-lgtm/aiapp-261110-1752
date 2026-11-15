@@ -1,0 +1,1968 @@
+{
+ "verifiedOn": "2026-11-15",
+ "national": [
+  {
+   "id": "pmo",
+   "name": "Prime Minister's Office (PMO), Seva Teerth",
+   "roles": [
+    "PMO"
+   ],
+   "level": "NATIONAL",
+   "phone": "+911123012312",
+   "fax": "+911123016857",
+   "address": "Prime Minister's Office, Seva Teerth, New Delhi - 110011",
+   "url": "https://www.pmindia.gov.in/en/interact-with-honble-pm/",
+   "note": "PMO moved from South Block to Seva Teerth in Feb 2026. It takes complaints through 'Write to the Prime Minister' on pmindia.gov.in, by post or by fax, not by email.",
+   "source": "pmindia.gov.in FAQ; india.gov.in"
+  },
+  {
+   "id": "cpgrams",
+   "name": "CPGRAMS – Central public grievance portal (DARPG)",
+   "roles": [
+    "CPGRAMS"
+   ],
+   "level": "NATIONAL",
+   "phone": "+919540613360",
+   "address": "Department of Administrative Reforms & Public Grievances, Sardar Patel Bhawan, Sansad Marg, New Delhi - 110001",
+   "url": "https://pgportal.gov.in",
+   "note": "File here for a tracked registration number; files can be uploaded. Grievances sent by email are not attended to.",
+   "source": "pgportal.gov.in"
+  },
+  {
+   "id": "cpcb",
+   "name": "Central Pollution Control Board (CPCB) – Member Secretary",
+   "roles": [
+    "CPCB"
+   ],
+   "level": "NATIONAL",
+   "email": "mscb.cpcb@nic.in",
+   "phone": "+911122303655",
+   "otherPhones": [
+    "+911143102207"
+   ],
+   "address": "Parivesh Bhawan, East Arjun Nagar, Delhi - 110032",
+   "url": "https://cpcb.nic.in",
+   "source": "cpcb.nic.in organisational structure"
+  },
+  {
+   "id": "moefcc",
+   "name": "Ministry of Environment, Forest & Climate Change – Secretary",
+   "roles": [
+    "MOEFCC"
+   ],
+   "level": "NATIONAL",
+   "email": "secy-moef@nic.in",
+   "phone": "+911120819220",
+   "otherPhones": [
+    "+911120819280"
+   ],
+   "address": "Indira Paryavaran Bhawan, Jor Bagh Road, New Delhi - 110003",
+   "url": "https://moef.gov.in",
+   "source": "igod.gov.in"
+  },
+  {
+   "id": "morth",
+   "name": "Ministry of Road Transport & Highways / NHAI (national highways)",
+   "roles": [
+    "MORTH"
+   ],
+   "level": "NATIONAL",
+   "phone": "1033",
+   "address": "Transport Bhawan, 1 Parliament Street, New Delhi - 110001",
+   "url": "https://pgportal.gov.in",
+   "note": "1033 is the 24x7 national highway helpline (potholes, accidents). Written grievances go through CPGRAMS, choosing NHAI or MoRTH.",
+   "source": "NHAI / PIB"
+  },
+  {
+   "id": "mines-moi",
+   "name": "Ministry of Mines",
+   "roles": [
+    "MINISTRY_MINES"
+   ],
+   "level": "NATIONAL",
+   "phone": "+911123070396",
+   "address": "3rd Floor, A Wing, Shastri Bhawan, New Delhi - 110001",
+   "url": "https://mines.gov.in",
+   "note": "Illegal mining of minor minerals (sand, stone) is enforced by the state; use CPGRAMS to escalate.",
+   "source": "igod.gov.in"
+  },
+  {
+   "id": "mohua",
+   "name": "Ministry of Housing & Urban Affairs – Public Grievance Cell",
+   "roles": [
+    "MOHUA"
+   ],
+   "level": "NATIONAL",
+   "email": "sopg-mud@nic.in",
+   "phone": "+911123062010",
+   "address": "Ground Floor, near Gate No. 1, Nirman Bhawan, New Delhi - 110011",
+   "url": "https://mohua.gov.in",
+   "source": "mohua.gov.in grievance page"
+  },
+  {
+   "id": "wccb",
+   "name": "Wildlife Crime Control Bureau (WCCB)",
+   "roles": [
+    "WCCB"
+   ],
+   "level": "NATIONAL",
+   "email": "addldir-wccb@gov.in",
+   "phone": "+911126182484",
+   "fax": "+911126160751",
+   "address": "2nd Floor, Trikoot-I, Bhikaji Cama Place, New Delhi - 110066",
+   "url": "https://wccb.gov.in",
+   "source": "wccb.gov.in"
+  },
+  {
+   "id": "cvc",
+   "name": "Central Vigilance Commission (CVC)",
+   "roles": [
+    "CVC"
+   ],
+   "level": "NATIONAL",
+   "phone": "+911124651020",
+   "address": "The Secretary, Central Vigilance Commission, Satarkta Bhawan, Block-A, GPO Complex, INA, New Delhi - 110023",
+   "url": "https://portal.cvc.gov.in",
+   "note": "Only for corruption by central government staff, central PSUs and banks. Lodge online or by post; email complaints are not entertained.",
+   "source": "cvc.gov.in public notices"
+  },
+  {
+   "id": "nhrc",
+   "name": "National Human Rights Commission (NHRC)",
+   "roles": [
+    "NHRC"
+   ],
+   "level": "NATIONAL",
+   "email": "cr.nhrc@nic.in",
+   "phone": "+911124651330",
+   "otherPhones": [
+    "+911124663333",
+    "14433"
+   ],
+   "fax": "+911124651332",
+   "address": "Manav Adhikar Bhawan, Block-C, GPO Complex, INA, New Delhi - 110023",
+   "url": "https://hrcnet.nic.in/HRCNet/public/webcomplaint.aspx",
+   "source": "nhrc.nic.in FAQ",
+   "defaultSelected": false
+  },
+  {
+   "id": "ngt-pb",
+   "name": "National Green Tribunal – Principal Bench (public grievance)",
+   "roles": [
+    "NGT"
+   ],
+   "level": "JUDICIARY",
+   "email": "publicgrievance-ngt@gov.in",
+   "phone": "+911123043528",
+   "otherPhones": [
+    "+911123043521"
+   ],
+   "fax": "+911123077931",
+   "address": "Faridkot House, Copernicus Marg, New Delhi - 110001",
+   "url": "https://greentribunal.gov.in",
+   "note": "NGT hears environmental applications; a letter with evidence can be taken up. Assam and the North East come under the Eastern Zone Bench, Kolkata.",
+   "source": "greentribunal.gov.in",
+   "defaultSelected": false
+  },
+  {
+   "id": "ngt-ez",
+   "name": "National Green Tribunal – Eastern Zone Bench, Kolkata (Registrar)",
+   "roles": [
+    "NGT"
+   ],
+   "level": "JUDICIARY",
+   "email": "registrarngt-kolkata@gov.in",
+   "phone": "+913323248094",
+   "address": "Finance Centre, 3rd Floor, Block III B, New Town, Kolkata - 700157",
+   "url": "https://greentribunal.gov.in",
+   "source": "greentribunal.gov.in telephone directory",
+   "defaultSelected": false
+  },
+  {
+   "id": "sci",
+   "name": "Supreme Court of India – Registrar",
+   "roles": [
+    "SUPREME_COURT"
+   ],
+   "level": "JUDICIARY",
+   "email": "supremecourt@nic.in",
+   "phone": "+911123116400",
+   "otherPhones": [
+    "+911123116401",
+    "+911123116402",
+    "+911123116403"
+   ],
+   "fax": "+911123381508",
+   "address": "The Registrar, Supreme Court of India, Tilak Marg, New Delhi - 110001",
+   "url": "https://www.sci.gov.in",
+   "note": "The court can treat a letter petition to the Chief Justice as a PIL. Filing a case otherwise needs e-filing or an advocate.",
+   "source": "sci.gov.in",
+   "defaultSelected": false
+  }
+ ],
+ "states": [
+  {
+   "state": "Assam",
+   "offices": [
+    {
+     "id": "as-cm",
+     "name": "Chief Minister's Office, Assam – Grievance Cell",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "email": "cm@assam.gov.in",
+     "phone": "+913612262222",
+     "otherPhones": [
+      "+913612237043"
+     ],
+     "fax": "+913612262069",
+     "address": "CM Grievance Cell, J Block, Lok Sewa Bhawan, Janata Bhawan, Dispur, Guwahati - 781006",
+     "url": "https://cm.assam.gov.in",
+     "source": "cm.assam.gov.in; igod.gov.in"
+    },
+    {
+     "id": "as-cs",
+     "name": "Chief Secretary, Government of Assam",
+     "roles": [
+      "CHIEF_SECRETARY"
+     ],
+     "level": "STATE",
+     "email": "ravi.kota@nic.in",
+     "address": "New CM Block, 3rd Floor, Janata Bhawan, Dispur, Guwahati - 781006",
+     "source": "industries.assam.gov.in contact page"
+    },
+    {
+     "id": "as-pwd",
+     "name": "Chief Engineer, PWD (Roads), Assam",
+     "roles": [
+      "PWD"
+     ],
+     "level": "STATE",
+     "email": "as-cepwd.roads@assam.gov.in",
+     "phone": "+913612660079",
+     "address": "Office of the Chief Engineer, PWD (Roads), Chandmari, Guwahati - 781003",
+     "url": "https://pwdroads.assam.gov.in",
+     "source": "pwdroads.assam.gov.in contact"
+    },
+    {
+     "id": "as-forest",
+     "name": "PCCF & Head of Forest Force, Assam",
+     "roles": [
+      "FOREST"
+     ],
+     "level": "STATE",
+     "email": "hoff-assam@gov.in",
+     "phone": "+913612333252",
+     "otherPhones": [
+      "+913612730337"
+     ],
+     "address": "Aranya Bhawan, Panjabari, Guwahati - 781037",
+     "url": "https://forest.assam.gov.in",
+     "source": "forest.assam.gov.in; environmentandforest.assam.gov.in"
+    },
+    {
+     "id": "as-wildlife",
+     "name": "PCCF (Wildlife) & Chief Wildlife Warden, Assam",
+     "roles": [
+      "WILDLIFE"
+     ],
+     "level": "STATE",
+     "email": "pccf.wl.assam@gmail.com",
+     "address": "Aranya Bhawan, Panjabari, Guwahati - 781037",
+     "url": "https://forest.assam.gov.in",
+     "source": "forest.assam.gov.in key officials"
+    },
+    {
+     "id": "as-envdept",
+     "name": "Environment & Forest Department, Govt of Assam (Spl. Chief Secretary)",
+     "roles": [
+      "FOREST",
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "acs.envforest@gmail.com",
+     "phone": "+913612237329",
+     "address": "D Block, 2nd Floor, Janata Bhawan, Dispur, Guwahati - 781006",
+     "url": "https://environmentandforest.assam.gov.in",
+     "source": "environmentandforest.assam.gov.in"
+    },
+    {
+     "id": "as-dgm",
+     "name": "Directorate of Geology & Mining, Assam",
+     "roles": [
+      "MINES"
+     ],
+     "level": "STATE",
+     "email": "dgmassam@gmail.com",
+     "phone": "+913612383017",
+     "otherPhones": [
+      "+918638080729"
+     ],
+     "address": "Directorate of Geology & Mining, Kahilipara, Guwahati - 781019",
+     "url": "https://dgm.assam.gov.in",
+     "source": "dgm.assam.gov.in contact"
+    },
+    {
+     "id": "as-minesdept",
+     "name": "Mines & Minerals Department, Assam (Addl. Chief Secretary)",
+     "roles": [
+      "MINES"
+     ],
+     "level": "STATE",
+     "email": "ajaytewari93@nic.in",
+     "phone": "+913612237281",
+     "address": "2nd Floor, I Block, Janata Bhawan, Dispur, Guwahati - 781006",
+     "url": "https://mines.assam.gov.in",
+     "source": "mines.assam.gov.in contact"
+    },
+    {
+     "id": "as-pcb",
+     "name": "Pollution Control Board, Assam – Member Secretary",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "membersecretary@pcbassam.org",
+     "phone": "+913612652774",
+     "otherPhones": [
+      "+913612550258"
+     ],
+     "fax": "+913612550259",
+     "address": "Bamunimaidam, Guwahati - 781021",
+     "url": "https://pcb.assam.gov.in",
+     "note": "Also: chairman@pcbassam.org, info@pcbassam.org",
+     "source": "CPCB SPCB directory; pcb.assam.gov.in"
+    },
+    {
+     "id": "as-dgp",
+     "name": "Director General of Police, Assam",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "STATE",
+     "email": "dgp@assampolice.gov.in",
+     "phone": "+913612450555",
+     "otherPhones": [
+      "+916026900101",
+      "+913612455126",
+      "112"
+     ],
+     "fax": "+913612525397",
+     "address": "Assam Police Headquarters, Ulubari, Guwahati - 781007",
+     "url": "https://police.assam.gov.in",
+     "note": "For an emergency or a crime in progress dial 112.",
+     "source": "police.assam.gov.in contact"
+    },
+    {
+     "id": "as-vac",
+     "name": "Directorate of Vigilance & Anti-Corruption, Assam",
+     "roles": [
+      "ANTI_CORRUPTION"
+     ],
+     "level": "STATE",
+     "email": "adgp-vac@assampolice.gov.in",
+     "phone": "18003453767",
+     "otherPhones": [
+      "+913612462294",
+      "+916026903409"
+     ],
+     "address": "Directorate of Vigilance & Anti-Corruption, Srimantapur, Guwahati - 781032",
+     "url": "https://dgvigilance.assam.gov.in",
+     "source": "dgvigilance.assam.gov.in contact"
+    },
+    {
+     "id": "as-lokayukta",
+     "name": "Lokayukta, Assam",
+     "roles": [
+      "LOKAYUKTA"
+     ],
+     "level": "STATE",
+     "address": "Office of the Lokayukta, Assam, Shaktigarh Path, Bylane 2, House No. 15 (3rd Floor), Bhangagarh, Guwahati - 781005",
+     "url": "https://www.assamlokayukta.gov.in",
+     "note": "Complaints go on the Lokayukta's prescribed form (on its website), by post or by hand.",
+     "source": "assamlokayukta.gov.in complaint form"
+    },
+    {
+     "id": "as-apdcl",
+     "name": "APDCL (Assam Power Distribution Co.) – Complaint centre",
+     "roles": [
+      "POWER"
+     ],
+     "level": "STATE",
+     "email": "support@apdcl.org",
+     "phone": "1912",
+     "otherPhones": [
+      "+917575999666",
+      "+912235296117"
+     ],
+     "url": "https://www.apdcl.org",
+     "note": "1912 is toll free inside Assam; 7575999666 is WhatsApp.",
+     "source": "APDCL helplines"
+    },
+    {
+     "id": "as-hc",
+     "name": "Gauhati High Court – Registrar General",
+     "roles": [
+      "HIGH_COURT"
+     ],
+     "level": "JUDICIARY",
+     "email": "hc-asm@nic.in",
+     "phone": "+913612600008",
+     "otherPhones": [
+      "+913612731245",
+      "+913612735869"
+     ],
+     "fax": "+913612735863",
+     "address": "The Gauhati High Court, M.G. Road, Guwahati - 781001",
+     "url": "https://ghconline.gov.in",
+     "note": "A PIL letter can be addressed to the Chief Justice. Also: highcourt.ghc@gmail.com",
+     "source": "Gauhati High Court directory",
+     "defaultSelected": false
+    }
+   ]
+  },
+  {
+   "state": "Meghalaya",
+   "offices": [
+    {
+     "id": "ml-cm",
+     "name": "Chief Minister's Office / grievance cell, Meghalaya",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "email": "cmomeghalaya@gmail.com",
+     "phone": "+913642224282",
+     "url": "https://cm.meghalaya.gov.in",
+     "source": "cm.meghalaya.gov.in"
+    },
+    {
+     "id": "ml-pcb",
+     "name": "Meghalaya State Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "memsecy.spcb-meg@gov.in",
+     "phone": "+913642522802",
+     "address": "Arden, Lumpyngngad, Shillong - 793014",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Nagaland",
+   "offices": [
+    {
+     "id": "nl-cm",
+     "name": "Chief Minister's Office / grievance cell, Nagaland",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "email": "cmngl@nic.in",
+     "phone": "+913702270119",
+     "otherPhones": [
+      "+913702270097"
+     ],
+     "address": "Chief Minister's Secretariat, Nagaland Civil Secretariat, Kohima - 797001",
+     "url": "https://chiefminister.nagaland.gov.in",
+     "source": "chiefminister.nagaland.gov.in"
+    },
+    {
+     "id": "nl-pcb",
+     "name": "Nagaland Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "npcb2@yahoo.com",
+     "phone": "+913862245726",
+     "address": "Signal Point, Dimapur - 797112",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Arunachal Pradesh",
+   "offices": [
+    {
+     "id": "ar-cm",
+     "name": "Chief Minister's Office / grievance cell, Arunachal Pradesh",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "email": "cmoffice-arn@gov.in",
+     "phone": "+913602212915",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "igod.gov.in"
+    },
+    {
+     "id": "ar-pcb",
+     "name": "Arunachal Pradesh State Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "arunachalspcb@gmail.com",
+     "phone": "+913602005121",
+     "address": "Paryavaran Bhawan, Papu Hill, Yupia Road, Naharlagun - 791110",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Manipur",
+   "offices": [
+    {
+     "id": "mn-cm",
+     "name": "Chief Minister's Office / grievance cell, Manipur",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "18003453818",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "mn-pcb",
+     "name": "Manipur Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "pcb-man@nic.in",
+     "address": "Lamphelpat, near Imphal West D.C. Office, Imphal",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Mizoram",
+   "offices": [
+    {
+     "id": "mz-cm",
+     "name": "Chief Minister's Office / grievance cell, Mizoram",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "mz-pcb",
+     "name": "Mizoram Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "mpcb@mizoram.gov.in",
+     "phone": "+913892336173",
+     "address": "New Secretariat Complex, Khatla, Aizawl - 796001",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Tripura",
+   "offices": [
+    {
+     "id": "tr-cm",
+     "name": "Chief Minister's Office / grievance cell, Tripura",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "tr-pcb",
+     "name": "Tripura State Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "tripuraspcb@gmail.com",
+     "phone": "+913812325421",
+     "address": "Vigyan Bhawan, Pandit Nehru Complex, Gorkhabasti, Agartala - 799006",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Sikkim",
+   "offices": [
+    {
+     "id": "sk-cm",
+     "name": "Chief Minister's Office / grievance cell, Sikkim",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "sk-pcb",
+     "name": "Sikkim State Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "spcbsikkim@gmail.com",
+     "phone": "+913592281913",
+     "address": "Forest, Environment & Wildlife Management Dept, Deorali, Gangtok - 737102",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Maharashtra",
+   "offices": [
+    {
+     "id": "mh-cm",
+     "name": "Chief Minister's Office / grievance cell, Maharashtra",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "mh-pcb",
+     "name": "Maharashtra Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "ms@mpcb.gov.in",
+     "phone": "+912224010706",
+     "fax": "+912224023516",
+     "address": "Kalpataru Point, 2nd-4th Floor, Sion Circle, Sion (E), Mumbai - 400022",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Delhi",
+   "offices": [
+    {
+     "id": "dl-cm",
+     "name": "Chief Minister's Office / grievance cell, Delhi",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "1076",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "dl-pcb",
+     "name": "Delhi Pollution Control Committee",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "msdpcc@nic.in",
+     "phone": "+911123392306",
+     "address": "4th & 5th Floor, ISBT Building, Kashmere Gate, Delhi - 110006",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Karnataka",
+   "offices": [
+    {
+     "id": "ka-cm",
+     "name": "Chief Minister's Office / grievance cell, Karnataka",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "ka-pcb",
+     "name": "Karnataka State Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "ms@kspcb.gov.in",
+     "phone": "+918025588270",
+     "address": "Parisara Bhavan, 4th & 5th Floor, 49 Church Street, Bengaluru - 560001",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Tamil Nadu",
+   "offices": [
+    {
+     "id": "tn-cm",
+     "name": "Chief Minister's Office / grievance cell, Tamil Nadu",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "+914425671764",
+     "url": "https://cmhelpline.tn.gov.in",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "tn-pcb",
+     "name": "Tamil Nadu Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "memsec@tnpcb.gov.in",
+     "phone": "+914422353145",
+     "address": "76 Mount Salai, Guindy, Chennai - 600032",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "West Bengal",
+   "offices": [
+    {
+     "id": "wb-cm",
+     "name": "Chief Minister's Office / grievance cell, West Bengal",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "+919137091370",
+     "otherPhones": [
+      "18003458244"
+     ],
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "wb-pcb",
+     "name": "West Bengal Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "ms@wbpcb.gov.in",
+     "phone": "+913322023006",
+     "address": "Paribesh Bhavan, 10A, Block LA, Sector III, Salt Lake, Kolkata - 700106",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Uttar Pradesh",
+   "offices": [
+    {
+     "id": "up-cm",
+     "name": "Chief Minister's Office / grievance cell, Uttar Pradesh",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "1076",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "up-pcb",
+     "name": "Uttar Pradesh Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "ms@uppcb.in",
+     "phone": "+915222720895",
+     "address": "Building TC-12V, Vibhuti Khand, Gomti Nagar, Lucknow - 226010",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Bihar",
+   "offices": [
+    {
+     "id": "br-cm",
+     "name": "Chief Minister's Office / grievance cell, Bihar",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "+916122201000",
+     "otherPhones": [
+      "+916122205800"
+     ],
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "br-pcb",
+     "name": "Bihar State Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "msbspcb-bih@gov.in",
+     "phone": "+916122261709",
+     "address": "Parivesh Bhawan, Plot NS-B/2, Patliputra Industrial Area, Patna - 800010",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Gujarat",
+   "offices": [
+    {
+     "id": "gj-cm",
+     "name": "Chief Minister's Office / grievance cell, Gujarat",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "+917923250073",
+     "otherPhones": [
+      "+917923250074"
+     ],
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "gj-pcb",
+     "name": "Gujarat Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "ms-gpcb@gujarat.gov.in",
+     "phone": "+917923232152",
+     "address": "Paryavaran Bhavan, Sector 10-A, Gandhinagar - 382010",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Rajasthan",
+   "offices": [
+    {
+     "id": "rj-cm",
+     "name": "Chief Minister's Office / grievance cell, Rajasthan",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "181",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "rj-pcb",
+     "name": "Rajasthan State Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "member-secretary@rpcb.nic.in",
+     "phone": "+911412711263",
+     "address": "4 Jhalana Institutional Area, Jhalana Doongri, Jaipur - 302004",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Odisha",
+   "offices": [
+    {
+     "id": "od-cm",
+     "name": "Chief Minister's Office / grievance cell, Odisha",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "+916742390902",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "od-pcb",
+     "name": "State Pollution Control Board, Odisha",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "membersecretary@ospcboard.org",
+     "phone": "+916742562368",
+     "address": "Paribesh Bhawan, A-118, Nilakantha Nagar, Unit-VIII, Bhubaneswar - 751012",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Madhya Pradesh",
+   "offices": [
+    {
+     "id": "mp-cm",
+     "name": "Chief Minister's Office / grievance cell, Madhya Pradesh",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "181",
+     "url": "https://cmhelpline.mp.gov.in",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "mp-pcb",
+     "name": "Madhya Pradesh Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "ms-mppcb@mp.gov.in",
+     "phone": "+917552466735",
+     "address": "Paryavaran Parisar, E-5 Arera Colony, Bhopal - 462016",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Kerala",
+   "offices": [
+    {
+     "id": "kl-cm",
+     "name": "Chief Minister's Office / grievance cell, Kerala",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "18004257211",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "kl-pcb",
+     "name": "Kerala State Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "ms.kspcb@gov.in",
+     "phone": "+914712318151",
+     "address": "Plamoodu Jn., Pattom Palace P.O., Thiruvananthapuram - 695004",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Telangana",
+   "offices": [
+    {
+     "id": "tg-cm",
+     "name": "Chief Minister's Office / grievance cell, Telangana",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "otherPhones": [
+      "+919494181920"
+     ],
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "tg-pcb",
+     "name": "Telangana Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "ms-tspcb@telangana.gov.in",
+     "phone": "+914023815630",
+     "address": "Paryavarana Bhavan, A-3 Industrial Estate, Sanathnagar, Hyderabad - 500018",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Punjab",
+   "offices": [
+    {
+     "id": "pb-cm",
+     "name": "Chief Minister's Office / grievance cell, Punjab",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "1100",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "pb-pcb",
+     "name": "Punjab Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "msppcb@punjab.gov.in",
+     "phone": "+911752215802",
+     "address": "Vatavaran Bhawan, Nabha Road, Patiala - 147001",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Andhra Pradesh",
+   "offices": [
+    {
+     "id": "ap-cm",
+     "name": "Chief Minister's Office / grievance cell, Andhra Pradesh",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "1902",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "ap-pcb",
+     "name": "Andhra Pradesh Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "membersecy@appcb.gov.in",
+     "phone": "+918662463204",
+     "address": "D.No. 33-26-14 D/2, Chalamvari Street, Kasturibaipet, Vijayawada - 520010",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Haryana",
+   "offices": [
+    {
+     "id": "hr-cm",
+     "name": "Chief Minister's Office / grievance cell, Haryana",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "+911723322500",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "hr-pcb",
+     "name": "Haryana State Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "hspcbms@gmail.com",
+     "phone": "+911722581105",
+     "fax": "+911722581201",
+     "address": "C-11, Sector 6, Panchkula - 134109",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Himachal Pradesh",
+   "offices": [
+    {
+     "id": "hp-cm",
+     "name": "Chief Minister's Office / grievance cell, Himachal Pradesh",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "1100",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "hp-pcb",
+     "name": "Himachal Pradesh State Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "mspcb-hp@nic.in",
+     "phone": "+911772673766",
+     "address": "Him Parivesh, Phase-III, New Shimla - 171009",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Jharkhand",
+   "offices": [
+    {
+     "id": "jh-cm",
+     "name": "Chief Minister's Office / grievance cell, Jharkhand",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "181",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "jh-pcb",
+     "name": "Jharkhand State Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "ranchijspcb@gmail.com",
+     "phone": "+916512400851",
+     "address": "T.A. Building, HEC, Dhurwa, Ranchi - 834004",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Chhattisgarh",
+   "offices": [
+    {
+     "id": "cg-cm",
+     "name": "Chief Minister's Office / grievance cell, Chhattisgarh",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "1076",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "cg-pcb",
+     "name": "Chhattisgarh Environment Conservation Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "hocecb@gmail.com",
+     "phone": "+917712512222",
+     "address": "Paryavas Bhavan, North Block, Sector 19, Atal Nagar, Raipur - 492002",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Uttarakhand",
+   "offices": [
+    {
+     "id": "uk-cm",
+     "name": "Chief Minister's Office / grievance cell, Uttarakhand",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "phone": "1905",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "uk-pcb",
+     "name": "Uttarakhand Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "msukpcb@yahoo.com",
+     "phone": "+911352607092",
+     "address": "Gaura Devi Bhawan, 46B IT Park, Sahastradhara, Dehradun - 248001",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  },
+  {
+   "state": "Goa",
+   "offices": [
+    {
+     "id": "ga-cm",
+     "name": "Chief Minister's Office / grievance cell, Goa",
+     "roles": [
+      "STATE_CM"
+     ],
+     "level": "STATE",
+     "url": "https://pgportal.gov.in",
+     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
+     "source": "state CM helpline list"
+    },
+    {
+     "id": "ga-pcb",
+     "name": "Goa State Pollution Control Board",
+     "roles": [
+      "POLLUTION"
+     ],
+     "level": "STATE",
+     "email": "ms-gspcb.goa@nic.in",
+     "phone": "+918322407700",
+     "address": "Near Pilerne Industrial Estate, Saligao, Bardez, Goa - 403511",
+     "source": "CPCB SPCB directory 09.07.2024"
+    }
+   ]
+  }
+ ],
+ "districts": [
+  {
+   "district": "Karbi Anglong",
+   "state": "Assam",
+   "match": [
+    "karbi anglong",
+    "diphu",
+    "phuloni",
+    "bokajan",
+    "howraghat",
+    "dokmoka",
+    "bakulia",
+    "silonijan",
+    "duarbagori",
+    "duwar bagori",
+    "duar bagori",
+    "manja",
+    "borlongfer",
+    "samelangso"
+   ],
+   "postcodes": [
+    "782460",
+    "782461",
+    "782462",
+    "782480",
+    "782482",
+    "782441",
+    "782486",
+    "782485"
+   ],
+   "offices": [
+    {
+     "id": "ka-dc",
+     "name": "District Commissioner, Karbi Anglong (Diphu)",
+     "roles": [
+      "DISTRICT"
+     ],
+     "level": "DISTRICT",
+     "email": "dc-kanglong@nic.in",
+     "phone": "+913671272257",
+     "address": "Office of the District Commissioner, Diphu, Karbi Anglong - 782460",
+     "url": "https://karbianglong.assam.gov.in",
+     "source": "karbianglong.assam.gov.in"
+    },
+    {
+     "id": "ka-dc-eoffice",
+     "name": "DC Office Karbi Anglong – e-Office (petitions & complaints)",
+     "roles": [
+      "DISTRICT"
+     ],
+     "level": "DISTRICT",
+     "email": "kanglong@assam.gov.in",
+     "note": "The DC asked the public to send applications, petitions and complaints to this e-office address.",
+     "source": "The Hills Times"
+    },
+    {
+     "id": "ka-sp",
+     "name": "Superintendent of Police, Karbi Anglong (Diphu)",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-kanglong@assampolice.gov.in",
+     "phone": "+913671272254",
+     "otherPhones": [
+      "+916026900757"
+     ],
+     "source": "Assam Police district SP list"
+    },
+    {
+     "id": "ka-kaac",
+     "name": "Karbi Anglong Autonomous Council – Principal Secretary",
+     "roles": [
+      "AUTONOMOUS_COUNCIL",
+      "PWD",
+      "WATER",
+      "FOREST",
+      "MUNICIPAL"
+     ],
+     "level": "LOCAL",
+     "email": "ps-ka@nic.in",
+     "phone": "+919435027404",
+     "otherPhones": [
+      "+913671272504"
+     ],
+     "address": "KAAC Secretariat, Diphu, Karbi Anglong - 782460",
+     "url": "https://karbianglong.co.in",
+     "note": "Karbi Anglong is a Sixth Schedule area: roads (PWD), forests, water supply and most development departments are under the KAAC. Also: kaac.council@gmail.com",
+     "source": "karbianglong.gov.in; KAAC orders"
+    },
+    {
+     "id": "ka-cem",
+     "name": "Chief Executive Member's Office, KAAC",
+     "roles": [
+      "AUTONOMOUS_COUNCIL"
+     ],
+     "level": "LOCAL",
+     "email": "cem-kaac@gov.in",
+     "address": "Chief Executive Member Office, KAAC, Diphu - 782460",
+     "url": "https://cemo.karbianglong.co.in",
+     "source": "cemo.karbianglong.co.in"
+    },
+    {
+     "id": "ka-diphu-mb",
+     "name": "Diphu Municipal Board",
+     "roles": [
+      "MUNICIPAL"
+     ],
+     "level": "LOCAL",
+     "email": "dtcdiphumb1@gmail.com",
+     "address": "Ward No. 5, Diphu, Karbi Anglong",
+     "url": "https://diphu.assamurban.in",
+     "source": "diphu.assamurban.in"
+    },
+    {
+     "id": "ka-dto",
+     "name": "District Transport Office, Diphu",
+     "roles": [
+      "TRAFFIC"
+     ],
+     "level": "DISTRICT",
+     "email": "dtokarbianglong@gmail.com",
+     "phone": "+919531107504",
+     "address": "District Transport Office, near Badan Memorial School, Diphu - 782460",
+     "source": "karbianglong.assam.gov.in"
+    }
+   ]
+  },
+  {
+   "district": "West Karbi Anglong",
+   "state": "Assam",
+   "match": [
+    "west karbi anglong",
+    "hamren",
+    "kheroni",
+    "donkamokam"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "wka-dc",
+     "name": "District Commissioner, West Karbi Anglong (Hamren)",
+     "roles": [
+      "DISTRICT"
+     ],
+     "level": "DISTRICT",
+     "email": "dc-westkarbianglong@nic.in",
+     "source": "Assam DC list"
+    },
+    {
+     "id": "wka-sp",
+     "name": "Superintendent of Police, West Karbi Anglong (Hamren)",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-hamren@assampolice.gov.in",
+     "phone": "+913677230213",
+     "otherPhones": [
+      "+916026901227"
+     ],
+     "source": "Assam Police district SP list"
+    },
+    {
+     "id": "wka-kaac",
+     "name": "Karbi Anglong Autonomous Council – Principal Secretary",
+     "roles": [
+      "AUTONOMOUS_COUNCIL",
+      "PWD",
+      "WATER",
+      "FOREST"
+     ],
+     "level": "LOCAL",
+     "email": "ps-ka@nic.in",
+     "phone": "+919435027404",
+     "address": "KAAC Secretariat, Diphu - 782460",
+     "url": "https://karbianglong.co.in",
+     "note": "KAAC administers both Karbi Anglong and West Karbi Anglong.",
+     "source": "karbianglong.gov.in"
+    }
+   ]
+  },
+  {
+   "district": "Golaghat",
+   "state": "Assam",
+   "match": [
+    "golaghat",
+    "bokakhat",
+    "kaziranga",
+    "dergaon",
+    "sarupathar"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "gol-dc",
+     "name": "District Commissioner, Golaghat",
+     "roles": [
+      "DISTRICT"
+     ],
+     "level": "DISTRICT",
+     "email": "dc-golaghat@nic.in",
+     "phone": "+913774280222",
+     "source": "Assam DC list"
+    },
+    {
+     "id": "gol-sp",
+     "name": "Superintendent of Police, Golaghat",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-golaghat@assampolice.gov.in",
+     "phone": "+913774285233",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Jorhat",
+   "state": "Assam",
+   "match": [
+    "jorhat",
+    "titabar",
+    "mariani"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "jor-dc",
+     "name": "District Commissioner, Jorhat",
+     "roles": [
+      "DISTRICT"
+     ],
+     "level": "DISTRICT",
+     "email": "dc-jorhat@nic.in",
+     "source": "Assam DC list"
+    },
+    {
+     "id": "jor-sp",
+     "name": "Superintendent of Police, Jorhat",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-jorhat@assampolice.gov.in",
+     "phone": "+913762320021",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Dima Hasao",
+   "state": "Assam",
+   "match": [
+    "dima hasao",
+    "haflong",
+    "n.c. hills"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "dh-dc",
+     "name": "District Commissioner, Dima Hasao (Haflong)",
+     "roles": [
+      "DISTRICT"
+     ],
+     "level": "DISTRICT",
+     "email": "dc-dimahasao@nic.in",
+     "phone": "+913673236222",
+     "source": "Assam DC list"
+    },
+    {
+     "id": "dh-sp",
+     "name": "Superintendent of Police, Dima Hasao",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-dimahasao@assampolice.gov.in",
+     "phone": "+913673236325",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Kamrup",
+   "state": "Assam",
+   "match": [
+    "kamrup"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "kamr-sp",
+     "name": "Superintendent of Police, Kamrup",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-kamrup@assampolice.gov.in",
+     "phone": "+913612684402",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Barpeta",
+   "state": "Assam",
+   "match": [
+    "barpeta"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "barp-sp",
+     "name": "Superintendent of Police, Barpeta",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-barpeta@assampolice.gov.in",
+     "phone": "+913665236254",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Sivasagar",
+   "state": "Assam",
+   "match": [
+    "sivasagar"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "siva-sp",
+     "name": "Superintendent of Police, Sivasagar",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-sivasagar@assampolice.gov.in",
+     "phone": "+913772222124",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Dibrugarh",
+   "state": "Assam",
+   "match": [
+    "dibrugarh"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "dibr-sp",
+     "name": "Superintendent of Police, Dibrugarh",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-dibrugarh@assampolice.gov.in",
+     "phone": "+913732324424",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Dhubri",
+   "state": "Assam",
+   "match": [
+    "dhubri"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "dhub-sp",
+     "name": "Superintendent of Police, Dhubri",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-dhubri@assampolice.gov.in",
+     "phone": "+913662230014",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Goalpara",
+   "state": "Assam",
+   "match": [
+    "goalpara"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "goal-dc",
+     "name": "District Commissioner, Goalpara",
+     "roles": [
+      "DISTRICT"
+     ],
+     "level": "DISTRICT",
+     "email": "dc-goalpara@nic.in",
+     "source": "Assam DC list"
+    },
+    {
+     "id": "goal-sp",
+     "name": "Superintendent of Police, Goalpara",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-goalpara@assampolice.gov.in",
+     "phone": "+913663240161",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Cachar",
+   "state": "Assam",
+   "match": [
+    "cachar"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "cach-sp",
+     "name": "Superintendent of Police, Cachar",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-cachar@assampolice.gov.in",
+     "phone": "+913842245866",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Nagaon",
+   "state": "Assam",
+   "match": [
+    "nagaon"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "naga-sp",
+     "name": "Superintendent of Police, Nagaon",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-nagaon@assampolice.gov.in",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Karimganj",
+   "state": "Assam",
+   "match": [
+    "karimganj"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "kari-sp",
+     "name": "Superintendent of Police, Karimganj",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-karimganj@assampolice.gov.in",
+     "phone": "+913843262371",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Sonitpur",
+   "state": "Assam",
+   "match": [
+    "sonitpur"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "soni-sp",
+     "name": "Superintendent of Police, Sonitpur",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-sonitpur@assampolice.gov.in",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Darrang",
+   "state": "Assam",
+   "match": [
+    "darrang"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "darr-sp",
+     "name": "Superintendent of Police, Darrang",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-darrang@assampolice.gov.in",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Lakhimpur",
+   "state": "Assam",
+   "match": [
+    "lakhimpur"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "lakh-dc",
+     "name": "District Commissioner, Lakhimpur",
+     "roles": [
+      "DISTRICT"
+     ],
+     "level": "DISTRICT",
+     "email": "dc-lakhimpur@nic.in",
+     "source": "Assam DC list"
+    },
+    {
+     "id": "lakh-sp",
+     "name": "Superintendent of Police, Lakhimpur",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-lakhimpur@assampolice.gov.in",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Nalbari",
+   "state": "Assam",
+   "match": [
+    "nalbari"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "nalb-sp",
+     "name": "Superintendent of Police, Nalbari",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-nalbari@assampolice.gov.in",
+     "phone": "+913624220466",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Tinsukia",
+   "state": "Assam",
+   "match": [
+    "tinsukia"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "tins-sp",
+     "name": "Superintendent of Police, Tinsukia",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-tinsukia@assampolice.gov.in",
+     "phone": "+913742331468",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Dhemaji",
+   "state": "Assam",
+   "match": [
+    "dhemaji"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "dhem-sp",
+     "name": "Superintendent of Police, Dhemaji",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-dhemaji@assampolice.gov.in",
+     "phone": "+913753224396",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Hailakandi",
+   "state": "Assam",
+   "match": [
+    "hailakandi"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "hail-dc",
+     "name": "District Commissioner, Hailakandi",
+     "roles": [
+      "DISTRICT"
+     ],
+     "level": "DISTRICT",
+     "email": "dc-hailakandi@nic.in",
+     "source": "Assam DC list"
+    },
+    {
+     "id": "hail-sp",
+     "name": "Superintendent of Police, Hailakandi",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-hailakandi@assampolice.gov.in",
+     "phone": "+913844222242",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Morigaon",
+   "state": "Assam",
+   "match": [
+    "morigaon"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "mori-sp",
+     "name": "Superintendent of Police, Morigaon",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-morigaon@assampolice.gov.in",
+     "phone": "+913678240238",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Bongaigaon",
+   "state": "Assam",
+   "match": [
+    "bongaigaon"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "bong-dc",
+     "name": "District Commissioner, Bongaigaon",
+     "roles": [
+      "DISTRICT"
+     ],
+     "level": "DISTRICT",
+     "email": "dc-bongaigaon@nic.in",
+     "source": "Assam DC list"
+    },
+    {
+     "id": "bong-sp",
+     "name": "Superintendent of Police, Bongaigaon",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-bongaigaon@assampolice.gov.in",
+     "phone": "+913664230898",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  },
+  {
+   "district": "Charaideo",
+   "state": "Assam",
+   "match": [
+    "charaideo"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "char-sp",
+     "name": "Superintendent of Police, Charaideo",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "email": "sp-charaideo@assampolice.gov.in",
+     "phone": "+913772256015",
+     "source": "Assam Police district SP list"
+    }
+   ]
+  }
+ ]
+}
