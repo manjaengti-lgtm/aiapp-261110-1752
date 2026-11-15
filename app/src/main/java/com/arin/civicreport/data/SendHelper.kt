@@ -126,7 +126,6 @@ class SendHelper(private val context: Context) {
         Intent(if (uris.size > 1) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND).apply {
             type = if (uris.isEmpty()) "text/plain" else "*/*"
             putExtra(Intent.EXTRA_EMAIL, recipients.toTypedArray())
-            putExtra(Intent.EXTRA_EMAIL, emailsOf(report.authorities).toTypedArray())
             putExtra(Intent.EXTRA_SUBJECT, subject)
             putExtra(Intent.EXTRA_TEXT, body)
             if (uris.size == 1) {
@@ -198,6 +197,7 @@ class SendHelper(private val context: Context) {
         val uris = allUris(report)
         val intent = Intent(if (uris.size > 1) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND).apply {
             type = if (uris.isEmpty()) "text/plain" else "*/*"
+            putExtra(Intent.EXTRA_EMAIL, emailsOf(report.authorities).toTypedArray())
             putExtra(Intent.EXTRA_SUBJECT, subject)
             putExtra(Intent.EXTRA_TEXT, body)
             if (uris.size == 1) {
