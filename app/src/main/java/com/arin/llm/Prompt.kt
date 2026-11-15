@@ -249,8 +249,12 @@ object Prompt {
             append("run up to $MAX_DEEP_SEARCHES different searches (one <search> per reply, each from a different angle), open the ")
             append("most useful pages with <fetch>https://…</fetch> to read them properly, compare what the sources say and note ")
             append("where they disagree. Then write a structured report: a short answer first, then sections with headings, key ")
-            append("facts and figures with their dates, and a Sources list naming each source. Say what you could not confirm.\n\n")
+            append("facts and figures with their dates, and a Sources list naming each source. Say what you could not confirm.\n")
+            append("NEVER stop with just a line like \"searching next\" or \"continuing\": every reply either carries ONE <search> or ")
+            append("<fetch> as its last action, or is the finished report. When you have enough, write the full report straight away.\n\n")
         }
+        append("Finishing any task: when you have used searches, tools or the terminal, don't end with a bare status line. Finish with ")
+        append("a short clear summary of what you found or did, then one line telling the person what they can do next.\n\n")
 
         append("Artifacts: when you write a complete web page, interactive demo, SVG image, standalone document or ")
         append("program the person will want to keep, put the whole thing in ONE fenced block (```html, ```svg, ")
@@ -395,6 +399,24 @@ object Prompt {
         val tail = t.takeLast(300)
         return t.endsWith(":") || t.endsWith("…") || t.endsWith("...") ||
             (promiseWords.containsMatchIn(tail.substringAfterLast("\n\n")) && tail.length < 300 && !tail.contains("Summary", true))
+    }
+
+    private val researchStall = Regex(
+        """(?i)\b(search(ing)?|look(ing)?( (it|them) )?up|check(ing)?|continu(e|ing)|carry(ing)? on|keep going|next( up)?|then i|after that|let me|i'?ll|going to|moving on|pull(ing)? up|gather(ing)?)\b""",
+    )
+
+    /**
+     * True when a reply in a research/search task is just a status line ("Searching for X next.", "Continuing…")
+     * instead of a real search tag or a finished report — so the task stalled and should be nudged on.
+     */
+    fun stalledResearch(reply: String): Boolean {
+        val t = clean(reply).trim()
+        if (t.isEmpty()) return true
+        if (t.endsWith("?")) return false
+        // A finished report is long and has structure; a stall is a short status line.
+        if (t.length > 600 || t.lines().count { it.trim().isNotEmpty() } > 8) return false
+        return looksUnfinished(reply) || t.endsWith("next.") || t.endsWith("next") ||
+            researchStall.containsMatchIn(t.takeLast(200))
     }
 
     /** The command the reply asks to run, if any. */

@@ -1063,6 +1063,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             var webSteps = 0
             var nudges = 0
             var buildNudges = 0
+            var researchNudges = 0
             var stopped = false
             var failStreak = 0
             liveCommands.clear()
@@ -1325,6 +1326,22 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                 "You said the build is starting, but your reply had no <build> tag, so nothing started. Send it now: " +
                                     "<build name=\"App name\">the full description of the app</build> (or <update_arin>…</update_arin> " +
                                     "for a change to Arin). Only the tag and at most one short sentence.",
+                            )
+                            liveText = ""
+                            continue
+                        }
+                        // Research: said "searching next" but sent no <search> tag, so it stalled. Search, or write the report.
+                        if ((deep || useSearch) && researchNudges < 6 && searches < Prompt.MAX_DEEP_SEARCHES &&
+                            Prompt.searchQueryAnywhere(full) == null && Prompt.stalledResearch(full)
+                        ) {
+                            researchNudges++
+                            turns += Turn(false, full)
+                            turns += Turn(
+                                true,
+                                "You described your next step but didn't act, so nothing happened and you stopped. Don't stop. Do ONE now: " +
+                                    "run the next search as the ONLY thing in your reply — <search>your query</search> — and nothing else; " +
+                                    "OR, if you already have enough, write the FULL report now with headings, the key facts and a Sources " +
+                                    "list, and end by telling me plainly what I can do next. Never reply with just \"searching next\" again.",
                             )
                             liveText = ""
                             continue
