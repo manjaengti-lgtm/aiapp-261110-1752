@@ -143,6 +143,31 @@
    "defaultSelected": false
   },
   {
+   "id": "ncb-manas",
+   "name": "MANAS – National Narcotics Helpline (Narcotics Control Bureau)",
+   "roles": [
+    "NARCOTICS"
+   ],
+   "level": "NATIONAL",
+   "email": "info.ncbmanas@gov.in",
+   "phone": "1933",
+   "url": "https://ncbmanas.gov.in",
+   "note": "24x7 toll free. Report drug peddling, trafficking or illegal cultivation; your identity is kept confidential.",
+   "source": "NCB / PIB (MANAS factsheet)"
+  },
+  {
+   "id": "childline",
+   "name": "Childline 1098 (child labour, child in distress)",
+   "roles": [
+    "CHILD_PROTECTION"
+   ],
+   "level": "NATIONAL",
+   "phone": "1098",
+   "url": "https://labourcommissioner.assam.gov.in/department-highlights/child-and-adolescent-labour",
+   "note": "Toll free. The Labour Department carries out rescue after a 1098 complaint; you can also tell the nearest police station.",
+   "source": "labourcommissioner.assam.gov.in"
+  },
+  {
    "id": "ngt-pb",
    "name": "National Green Tribunal – Principal Bench (public grievance)",
    "roles": [
@@ -375,11 +400,14 @@
      "email": "adgp-vac@assampolice.gov.in",
      "phone": "18003453767",
      "otherPhones": [
-      "+913612462294"
+      "+913612462294",
+      "+913612462295",
+      "+916026901243"
      ],
      "address": "Directorate of Vigilance & Anti-Corruption, Srimantapur, Guwahati - 781032",
      "url": "https://dgvigilance.assam.gov.in",
-     "source": "dgvigilance.assam.gov.in contact"
+     "note": "6026901243 is the anti-corruption WhatsApp number.",
+     "source": "dgvigilance.assam.gov.in contact; Sentinel (WhatsApp)"
     },
     {
      "id": "as-lokayukta",
@@ -409,6 +437,135 @@
      "url": "https://www.apdcl.org",
      "note": "1912 is toll free inside Assam; 7575999666 is WhatsApp. Complaints can also be lodged in the myBijulee app.",
      "source": "APDCL helplines as reported by Pratidin Time / Sentinel"
+    },
+    {
+     "id": "as-revenue",
+     "name": "Revenue & Disaster Management Department, Assam (Principal Secretary)",
+     "roles": [
+      "REVENUE"
+     ],
+     "level": "STATE",
+     "phone": "+919435067666",
+     "address": "I Block, 2nd Floor, Assam Secretariat (Civil), Dispur, Guwahati - 781006",
+     "url": "https://landrevenue.assam.gov.in",
+     "note": "Government-land encroachment and earth/hill cutting on government land are acted on by the Circle Officer of your revenue circle, under the District Commissioner (Assam Land & Revenue Regulation, 1886; Assam Land Policy 2019).",
+     "source": "landrevenue.assam.gov.in contact"
+    },
+    {
+     "id": "as-phed",
+     "name": "Public Health Engineering Department (PHED), Assam",
+     "roles": [
+      "WATER"
+     ],
+     "level": "STATE",
+     "email": "secyasphe@rediffmail.com",
+     "address": "Second Floor, Block-B, Assam Secretariat, Dispur, Guwahati - 781006",
+     "url": "https://phe.assam.gov.in",
+     "note": "Rural drinking water (Jal Jeevan Mission). JJM Mission Director: mdjjmassam@gmail.com",
+     "source": "phe.assam.gov.in contact"
+    },
+    {
+     "id": "as-phe-ce",
+     "name": "Chief Engineer (Water), PHED Assam",
+     "roles": [
+      "WATER"
+     ],
+     "level": "STATE",
+     "email": "asphe@rediffmail.com",
+     "address": "Office of the Chief Engineer (Water), Hengrabari, Guwahati - 781036",
+     "url": "https://phewater.assam.gov.in",
+     "source": "phewater.assam.gov.in"
+    },
+    {
+     "id": "as-wrd",
+     "name": "Water Resources Department, Assam (drainage, flood, erosion)",
+     "roles": [
+      "WATER_RESOURCES"
+     ],
+     "level": "STATE",
+     "email": "bhaskar.sarmah@assam.gov.in",
+     "address": "Chief Engineer, Water Resources Department, 5th Floor, Assam Water Centre, Basistha, Guwahati - 781029",
+     "url": "https://waterresources.assam.gov.in",
+     "note": "Special Chief Secretary: s.abbasi@nic.in",
+     "source": "waterresources.assam.gov.in contact"
+    },
+    {
+     "id": "as-dma",
+     "name": "Directorate of Municipal Administration, Assam (all municipal boards & town committees)",
+     "roles": [
+      "URBAN_DEV"
+     ],
+     "level": "STATE",
+     "phone": "+913612261436",
+     "address": "Directorate of Municipal Administration, Dispur, Guwahati - 781006",
+     "url": "https://dma.assam.gov.in",
+     "note": "Supervises all 103 urban local bodies; complain here if your municipal board does not act.",
+     "source": "dma.assam.gov.in RTI page"
+    },
+    {
+     "id": "as-tcp",
+     "name": "Directorate of Town & Country Planning, Assam (building permission, master plans)",
+     "roles": [
+      "TOWN_PLANNING"
+     ],
+     "level": "STATE",
+     "email": "directortcpassam@gmail.com",
+     "phone": "+913612261540",
+     "address": "Town & Country Planning, Dispur, Guwahati",
+     "url": "https://tcp.assam.gov.in",
+     "source": "tcp.assam.gov.in key officials"
+    },
+    {
+     "id": "as-pnrd",
+     "name": "Panchayat & Rural Development Department, Assam",
+     "roles": [
+      "PANCHAYAT"
+     ],
+     "level": "STATE",
+     "email": "pnrd-eoffice@assam.gov.in",
+     "address": "Janata Bhawan, Block A, 3rd Floor, Dispur, Guwahati - 781006",
+     "url": "https://pnrd.assam.gov.in",
+     "note": "In villages, garbage, street lights and village roads are the Gaon Panchayat's job. Complain first to the Gaon Panchayat, then the Block Development Officer, then the CEO Zilla Parishad.",
+     "source": "pnrd.assam.gov.in key officials; rural.assam.gov.in grievance page"
+    },
+    {
+     "id": "as-excise",
+     "name": "Excise Department, Assam (illegal liquor)",
+     "roles": [
+      "EXCISE"
+     ],
+     "level": "STATE",
+     "email": "adilkhanias@nic.in",
+     "address": "Commissioner of Excise, Housefed Complex, Dispur, Guwahati - 781006",
+     "url": "https://stateexcise.assam.gov.in",
+     "note": "Lodge an online complaint under 'Vigilance & Enforcement' on stateexcise.assam.gov.in; it goes to the Inspector of Excise. Email is the Excise Secretary.",
+     "source": "excise.assam.gov.in contact; State Excise portal user manual"
+    },
+    {
+     "id": "as-fishery",
+     "name": "Directorate of Fisheries, Assam (illegal fishing, poisoning water bodies)",
+     "roles": [
+      "FISHERY"
+     ],
+     "level": "STATE",
+     "email": "directorof-fisheries@assam.gov.in",
+     "phone": "+913612545104",
+     "address": "Directorate of Fisheries, Meen Bhawan, Gopinath Nagar, Guwahati - 781016",
+     "url": "https://fisheries.assam.gov.in",
+     "note": "Department email: fishassam@gmail.com. Enforces the Assam Fishery Rules, 1953 (incl. the 1 April – 31 July breeding ban).",
+     "source": "fisheries.assam.gov.in contact"
+    },
+    {
+     "id": "as-foodsafety",
+     "name": "Commissioner of Food Safety, Assam (food adulteration)",
+     "roles": [
+      "FOOD_SAFETY"
+     ],
+     "level": "STATE",
+     "email": "foodsafety.assam@gmail.com",
+     "url": "https://fda.assam.gov.in",
+     "note": "Food Safety & Standards Act, 2006. District Food Safety Officers collect samples on complaint.",
+     "source": "FSSAI East Region grievance page; fda.assam.gov.in"
     },
     {
      "id": "as-hc",
@@ -1288,7 +1445,9 @@
       "PWD",
       "WATER",
       "FOREST",
-      "MUNICIPAL"
+      "MUNICIPAL",
+      "REVENUE",
+      "PANCHAYAT"
      ],
      "level": "LOCAL",
      "email": "ps-ka@nic.in",
@@ -1559,6 +1718,79 @@
       "+916026900437"
      ],
      "source": "Assam Police officers directory (police.assam.gov.in)"
+    }
+   ]
+  },
+  {
+   "district": "Kamrup Metropolitan",
+   "state": "Assam",
+   "match": [
+    "kamrup metropolitan",
+    "kamrup metro",
+    "guwahati",
+    "dispur",
+    "beltola",
+    "khanapara",
+    "jalukbari",
+    "maligaon"
+   ],
+   "postcodes": [],
+   "offices": [
+    {
+     "id": "gmc",
+     "name": "Guwahati Municipal Corporation (Commissioner)",
+     "roles": [
+      "MUNICIPAL"
+     ],
+     "level": "LOCAL",
+     "email": "guwahaticom@gmail.com",
+     "phone": "+913612540525",
+     "fax": "+913612631800",
+     "address": "Guwahati Municipal Corporation, Panbazar, Guwahati - 781001",
+     "url": "https://gmc.assam.gov.in",
+     "source": "gmc.assam.gov.in contact"
+    },
+    {
+     "id": "gmc-pgo",
+     "name": "GMC Public Grievance Officer",
+     "roles": [
+      "MUNICIPAL"
+     ],
+     "level": "LOCAL",
+     "email": "gmcpgo@gmail.com",
+     "phone": "+917086054005",
+     "url": "https://gmc.assam.gov.in",
+     "source": "gmc.assam.gov.in contact"
+    },
+    {
+     "id": "gmda",
+     "name": "Guwahati Metropolitan Development Authority (building permission, hill cutting, drainage)",
+     "roles": [
+      "TOWN_PLANNING"
+     ],
+     "level": "LOCAL",
+     "email": "complain.gmda@gmail.com",
+     "phone": "+913612529824",
+     "otherPhones": [
+      "+913612529650"
+     ],
+     "fax": "+913612529991",
+     "address": "3rd Floor, STATFED Building, G.M.C.H. Road, Bhangagarh, Guwahati - 781005",
+     "url": "https://gmda.assam.gov.in",
+     "note": "CEO: ceo.gmda-as@nic.in",
+     "source": "gmda.assam.gov.in contact"
+    },
+    {
+     "id": "gwp",
+     "name": "Commissioner of Police, Guwahati",
+     "roles": [
+      "POLICE"
+     ],
+     "level": "DISTRICT",
+     "phone": "112",
+     "address": "Commissioner of Police, Guwahati, M.G. Road, Panbazar, Guwahati - 781001",
+     "note": "Dial 112 for police in Guwahati.",
+     "source": "Gauhati High Court cause title (address)"
     }
    ]
   },

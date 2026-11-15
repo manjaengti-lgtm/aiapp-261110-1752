@@ -17,7 +17,22 @@ enum class IncidentType(val label: String, val shortLabel: String, val emoji: St
     AIR_POLLUTION("Air pollution / burning", "Air pollution", "\uD83C\uDFED", "Smoke, open burning, factory or brick-kiln emissions"),
     WILDLIFE_CRIME("Poaching / wildlife crime", "Wildlife crime", "\uD83D\uDC18", "Hunting, trapping or trade of protected animals"),
     WATER_SUPPLY("No drinking water", "Water supply", "\uD83D\uDEB0", "Broken pipeline, dry tap, dirty supply water"),
-    CORRUPTION("Bribe / corruption", "Corruption", "\uD83D\uDCB0", "An official demanding money or misusing public funds")
+    CORRUPTION("Bribe / corruption", "Corruption", "\uD83D\uDCB0", "An official demanding money or misusing public funds"),
+    HILL_CUTTING("Illegal hill / earth cutting", "Hill cutting", "\u26F0", "Hills or land dug and earth carried away without permission"),
+    ILLEGAL_LIQUOR("Illegal liquor", "Illegal liquor", "\uD83C\uDF76", "Brewing or selling liquor without a licence"),
+    DRUGS("Drug peddling", "Drugs", "\uD83D\uDC8A", "Sale, trafficking or cultivation of narcotic drugs"),
+    ILLEGAL_FISHING("Illegal fishing", "Illegal fishing", "\uD83D\uDC1F", "Poison, electric or small-mesh fishing, fishing in the ban period"),
+    FOOD_ADULTERATION("Food adulteration", "Food adulteration", "\uD83E\uDD6B", "Adulterated, spoiled or mislabelled food being sold"),
+    CHILD_LABOUR("Child labour", "Child labour", "\uD83E\uDDD2", "A child made to work in a shop, home, factory or site")
+}
+
+/** How directly an office is responsible for a particular complaint. */
+@Serializable
+enum class AuthorityTier(val label: String, val hint: String, val order: Int) {
+    RESPONSIBLE("Responsible department", "The office that must act on this by law. Complain here first.", 0),
+    SUPPORTING("Supporting departments", "Offices that share the job or enforce related laws.", 1),
+    ESCALATION("Higher authorities", "Escalate here if the responsible office does not act.", 2),
+    COURTS("Courts and tribunals", "They take petitions, not ordinary complaints, so these start unticked.", 3)
 }
 
 /** How high up the chain an office sits, from the spot itself to the courts. */
@@ -34,6 +49,16 @@ enum class AuthorityLevel(val label: String, val order: Int) {
 enum class AuthorityRole(val label: String) {
     MUNICIPAL("Municipal / town body"),
     AUTONOMOUS_COUNCIL("Autonomous council (Sixth Schedule)"),
+    PANCHAYAT("Gaon Panchayat / Panchayat & Rural Development"),
+    URBAN_DEV("Municipal administration (state)"),
+    TOWN_PLANNING("Town planning / development authority"),
+    REVENUE("Revenue (Circle Officer, land)"),
+    WATER_RESOURCES("Water Resources (drainage, flood)"),
+    EXCISE("Excise department"),
+    NARCOTICS("Narcotics (NCB / MANAS 1933)"),
+    FISHERY("Fisheries department"),
+    FOOD_SAFETY("Food safety commissioner"),
+    CHILD_PROTECTION("Child protection (1098 / Labour)"),
     PWD("Public Works (roads, engineers)"),
     TRAFFIC("Traffic / transport"),
     POLICE("Police"),
@@ -82,7 +107,8 @@ data class Authority(
     val defaultSelected: Boolean = true,
     val custom: Boolean = false,
     /** Where this contact was taken from, so the person can check it. */
-    val source: String? = null
+    val source: String? = null,
+    val tier: AuthorityTier = AuthorityTier.ESCALATION
 ) {
     val hasContact: Boolean
         get() = !email.isNullOrBlank() || !phone.isNullOrBlank() || !url.isNullOrBlank() ||

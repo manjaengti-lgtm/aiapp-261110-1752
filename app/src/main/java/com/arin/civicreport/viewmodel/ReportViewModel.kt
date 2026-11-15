@@ -128,12 +128,13 @@ class ReportViewModel(app: Application) : AndroidViewModel(app) {
             email = email.trim().ifBlank { null },
             phone = phone.trim().ifBlank { null },
             level = level,
-            custom = true
+            custom = true,
+            tier = com.arin.civicreport.model.AuthorityTier.RESPONSIBLE
         )
         _draft.update { d ->
             d.copy(
                 customAuthorities = d.customAuthorities + a,
-                authorities = (d.authorities + a).sortedBy { it.level.order },
+                authorities = (d.authorities + a).sortedWith(compareBy({ it.tier.order }, { it.level.order })),
                 selectedAuthorityIds = d.selectedAuthorityIds + a.id
             )
         }
@@ -213,7 +214,8 @@ class ReportViewModel(app: Application) : AndroidViewModel(app) {
             location = d.location,
             includeNational = settings.value.includeNationalAuthorities
         )
-        val found = (result.authorities + _draft.value.customAuthorities).sortedBy { it.level.order }
+        val found = (result.authorities + _draft.value.customAuthorities)
+            .sortedWith(compareBy({ it.tier.order }, { it.level.order }))
         _draft.update {
             it.copy(
                 authorities = found,

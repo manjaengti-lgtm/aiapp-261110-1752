@@ -6,7 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
 import com.arin.civicreport.model.Authority
-import com.arin.civicreport.model.AuthorityLevel
+import com.arin.civicreport.model.AuthorityTier
 import com.arin.civicreport.model.Report
 import java.io.File
 import java.text.SimpleDateFormat
@@ -24,6 +24,10 @@ class SendHelper(private val context: Context) {
         lines.appendLine("Via Duarbagori Reports")
         lines.appendLine()
         lines.appendLine("Issues: ${report.types.joinToString(", ") { it.label }}")
+        report.types.forEach { t ->
+            val info = AuthorityRules.info(t)
+            lines.appendLine("- ${t.label}: responsibility of ${info.handledBy} (${info.law}).")
+        }
         lines.appendLine("Reported on: $stamp")
         val loc = report.location
         lines.appendLine("Location: ${loc.oneLine}")
@@ -45,10 +49,10 @@ class SendHelper(private val context: Context) {
         if (report.authorities.isNotEmpty()) {
             lines.appendLine()
             lines.appendLine("Addressed to:")
-            AuthorityLevel.entries.sortedBy { it.order }.forEach { level ->
-                val group = report.authorities.filter { it.level == level }
+            AuthorityTier.entries.sortedBy { it.order }.forEach { tier ->
+                val group = report.authorities.filter { it.tier == tier }
                 if (group.isNotEmpty()) {
-                    lines.appendLine("${level.label}:")
+                    lines.appendLine("${tier.label}:")
                     group.forEach { lines.appendLine("- ${it.name}") }
                 }
             }

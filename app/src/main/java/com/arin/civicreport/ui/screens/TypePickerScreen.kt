@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arin.civicreport.model.IncidentType
+import com.arin.civicreport.data.AuthorityRules
 import com.arin.civicreport.ui.AppScaffold
 import com.arin.civicreport.viewmodel.ReportViewModel
 
@@ -111,6 +112,11 @@ private fun TypeRow(type: IncidentType, selected: Boolean) {
                 type.blurb,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "Goes to: " + AuthorityRules.info(type).handledBy,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
             )
         }
         if (selected) {

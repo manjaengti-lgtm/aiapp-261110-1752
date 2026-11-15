@@ -4,6 +4,7 @@ import android.content.Context
 import com.arin.civicreport.model.Authority
 import com.arin.civicreport.model.AuthorityLevel
 import com.arin.civicreport.model.AuthorityRole
+import com.arin.civicreport.model.AuthorityTier
 import com.arin.civicreport.model.IncidentType
 import com.arin.civicreport.model.ReportLocation
 import kotlinx.serialization.Serializable
@@ -107,8 +108,18 @@ class AuthorityFinder(private val context: Context) {
         return dir.states.firstOrNull { address.contains(norm(it.state)) }
     }
 
-    private fun Office.toAuthority(matched: Set<AuthorityRole>): Authority {
+    private fun Office.toAuthority(
+        matched: Set<AuthorityRole>,
+        responsible: Set<AuthorityRole>,
+        supporting: Set<AuthorityRole>
+    ): Authority {
         val shown = roleSet.filter { it in matched }.ifEmpty { roleSet.toList() }
+        val tier = when {
+            level == AuthorityLevel.JUDICIARY -> AuthorityTier.COURTS
+            roleSet.any { it in responsible } -> AuthorityTier.RESPONSIBLE
+            roleSet.any { it in supporting } -> AuthorityTier.SUPPORTING
+            else -> AuthorityTier.ESCALATION
+        }
         return Authority(
             id = id,
             name = name,
@@ -121,14 +132,17 @@ class AuthorityFinder(private val context: Context) {
             address = address,
             note = note,
             otherPhones = otherPhones,
-            defaultSelected = defaultSelected,
-            source = source
+            defaultSelected = defaultSelected && tier != AuthorityTier.COURTS,
+            source = source,
+            tier = tier
         )
     }
 
     fun find(types: List<IncidentType>, location: ReportLocation, includeNational: Boolean): Result {
         val dir = load()
         val roles = AuthorityRules.allRolesFor(types)
+        val responsible = AuthorityRules.responsibleFor(types)
+        val supporting = AuthorityRules.supportingFor(types)
         val district = findDistrict(dir, location)
         val state = findState(dir, location, district)
 
@@ -141,9 +155,9 @@ class AuthorityFinder(private val context: Context) {
         val picked = pool.filter { office ->
             office.roleSet.any { it in roles } && seen.add(office.id)
         }.filter { includeNational || it.level != AuthorityLevel.NATIONAL }
-            .map { it.toAuthority(roles) }
+            .map { it.toAuthority(roles, responsible, supporting) }
             .filter { it.hasContact }
-            .sortedBy { it.level.order }
+            .sortedWith(compareBy({ it.tier.order }, { it.level.order }))
 
         return Result(picked, district?.district, state?.state ?: district?.state, dir.verifiedOn)
     }

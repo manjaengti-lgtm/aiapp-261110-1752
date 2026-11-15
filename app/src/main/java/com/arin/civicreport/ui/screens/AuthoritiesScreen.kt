@@ -42,6 +42,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arin.civicreport.model.Authority
 import com.arin.civicreport.model.AuthorityLevel
+import com.arin.civicreport.model.AuthorityTier
+import com.arin.civicreport.data.AuthorityRules
 import com.arin.civicreport.ui.AppScaffold
 import com.arin.civicreport.ui.ErrorState
 import com.arin.civicreport.viewmodel.ReportViewModel
@@ -133,23 +135,44 @@ fun AuthoritiesScreen(vm: ReportViewModel, onBack: () -> Unit, onContinue: () ->
                     }
                 }
 
-                AuthorityLevel.entries.sortedBy { it.order }.forEach { level ->
-                    val group = draft.authorities.filter { it.level == level }
+                item {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Who is responsible", style = MaterialTheme.typography.titleMedium)
+                            draft.types.forEach { type ->
+                                val info = AuthorityRules.info(type)
+                                Text("${type.emoji} ${type.label}", style = MaterialTheme.typography.labelLarge)
+                                Text(info.handledBy, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "Law: ${info.law}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                AuthorityTier.entries.sortedBy { it.order }.forEach { tier ->
+                    val group = draft.authorities.filter { it.tier == tier }
                     if (group.isNotEmpty()) {
-                        item(key = "h-${level.name}") {
+                        item(key = "h-${tier.name}") {
                             Column(Modifier.padding(top = 6.dp)) {
                                 Text(
-                                    level.label,
+                                    "${tier.label} (${group.size})",
                                     style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = if (tier == AuthorityTier.RESPONSIBLE) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurface
                                 )
-                                if (level == AuthorityLevel.JUDICIARY) {
-                                    Text(
-                                        "Courts take petitions, not ordinary complaints, so these start unticked. Tick them to send a letter petition with your evidence.",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
+                                Text(
+                                    tier.hint,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                         items(group, key = { it.id }) { authority ->
@@ -162,6 +185,15 @@ fun AuthoritiesScreen(vm: ReportViewModel, onBack: () -> Unit, onContinue: () ->
                                 onOpen = { vm.sendHelper.openUrl(it) }
                             )
                         }
+                    }
+                }
+                if (draft.authorities.isNotEmpty() && draft.authorities.none { it.tier == AuthorityTier.RESPONSIBLE }) {
+                    item {
+                        Text(
+                            "No responsible office for this place is in the directory yet. Use \"Add an office\" for your local office, or file on CPGRAMS.",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
                 }
 
@@ -221,7 +253,7 @@ private fun AuthorityCard(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(authority.name, style = MaterialTheme.typography.titleMedium)
                 Text(
-                    authority.category,
+                    "${authority.level.label} · ${authority.category}",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

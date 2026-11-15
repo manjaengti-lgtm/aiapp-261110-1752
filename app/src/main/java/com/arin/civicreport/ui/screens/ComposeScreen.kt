@@ -45,7 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.arin.civicreport.model.AuthorityLevel
+import com.arin.civicreport.model.AuthorityTier
 import com.arin.civicreport.model.Report
 import com.arin.civicreport.model.ReportStatus
 import com.arin.civicreport.model.SendChannel
@@ -147,11 +147,11 @@ fun ComposeScreen(vm: ReportViewModel, onBack: () -> Unit, onFinished: () -> Uni
                             color = MaterialTheme.colorScheme.error
                         )
                     }
-                    AuthorityLevel.entries.sortedBy { it.order }.forEach { level ->
-                        val group = report.authorities.filter { it.level == level }
+                    AuthorityTier.entries.sortedBy { it.order }.forEach { tier ->
+                        val group = report.authorities.filter { it.tier == tier }
                         if (group.isNotEmpty()) {
                             Text(
-                                level.label,
+                                tier.label,
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(top = 8.dp)
