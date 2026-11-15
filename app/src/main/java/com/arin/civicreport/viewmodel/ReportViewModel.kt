@@ -258,24 +258,42 @@ class ReportViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun sendCurrent(report: Report, subject: String, body: String, channel: SendChannel): Boolean {
+        val wantsEmail = channel != SendChannel.SMS
         var ok = false
-        if (channel == SendChannel.EMAIL || channel == SendChannel.BOTH) {
-            ok = sendHelper.sendEmail(report, subject, body) || ok
-        }
-        if (channel == SendChannel.SMS || channel == SendChannel.BOTH) {
-            val smsOk = sendHelper.sendSms(report, body)
-            // The SMS chooser may swallow the mail app, so only treat SMS as failure
-            // when nothing at all could be opened.
-            ok = ok || smsOk
-        }
-        if (ok) {
-            if (settings.value.notificationsEnabled) {
-                notifications.notifyReportSent(report.title, report.authorities.size)
+        var message: String
+        if (wantsEmail) {
+            ok = sendHelper.sendEmail(report, subject, body)
+            message = when (sendHelper.lastEmailResult) {
+                com.arin.civicreport.data.SendHelper.EmailResult.OPENED ->
+                    "Email app opened with ${sendHelper.emailsOf(report.authorities).size} address(es) and your files. Press Send there."
+                com.arin.civicreport.data.SendHelper.EmailResult.OPENED_WITHOUT_FILES ->
+                    "Your email app would not take the files, so only the text was added. Use \"Share via any app\" for the files."
+                com.arin.civicreport.data.SendHelper.EmailResult.NO_RECIPIENTS ->
+                    "None of the selected offices has an email address. Use SMS, phone, or their portal."
+                com.arin.civicreport.data.SendHelper.EmailResult.NO_EMAIL_APP ->
+                    "No email app is set up on this phone. Install or sign in to Gmail, then try again."
             }
-            _sendResult.value = "Complaint handed to your app for sending."
+            // With email + SMS, SMS is sent with its own button so the two apps don't cover each other.
+            if (!ok && channel == SendChannel.BOTH && sendHelper.sendSms(report, body)) {
+                ok = true
+                message = "$message SMS app opened instead."
+            }
         } else {
-            _sendResult.value = "No mail or SMS app could be opened for this report."
+            ok = sendHelper.sendSms(report, body)
+            message = if (ok) "SMS app opened. Press Send there."
+            else "None of the selected offices has a mobile number for SMS."
         }
+        if (ok && settings.value.notificationsEnabled) {
+            notifications.notifyReportSent(report.title, report.authorities.size)
+        }
+        _sendResult.value = message
+        return ok
+    }
+
+    fun sendSmsOnly(report: Report, body: String): Boolean {
+        val ok = sendHelper.sendSms(report, body)
+        _sendResult.value = if (ok) "SMS app opened. Press Send there."
+        else "None of the selected offices has a mobile number for SMS."
         return ok
     }
 

@@ -310,15 +310,10 @@ fun ComposeScreen(vm: ReportViewModel, onBack: () -> Unit, onFinished: () -> Uni
                         vm.persist(snapshot(if (ok) ReportStatus.SENT else ReportStatus.DRAFT))
                         delay(150)
                         sending = false
-                        if (ok) {
-                            snackbar.showSnackbar("Complaint handed to the mail or SMS app.")
-                            delay(400)
-                            onFinished()
-                        } else {
-                            snackbar.showSnackbar(
-                                "No mail or SMS app opened. The complaint was saved as a draft."
-                            )
-                        }
+                        snackbar.showSnackbar(
+                            (vm.sendResult.value ?: "") +
+                                if (ok) "" else " The complaint was saved as a draft."
+                        )
                     }
                 },
                 enabled = canSend,
@@ -334,9 +329,31 @@ fun ComposeScreen(vm: ReportViewModel, onBack: () -> Unit, onFinished: () -> Uni
                 } else {
                     Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null)
                     Spacer(Modifier.size(8.dp))
-                    Text("Send the complaint")
+                    Text(if (sendEmail) "Send by email" else "Send by SMS")
                 }
             }
+
+            val smsCount = vm.sendHelper.smsNumbersOf(report.authorities).size
+            if (sendEmail && sendSms) {
+                OutlinedButton(
+                    onClick = {
+                        val ok = vm.sendSmsOnly(report, body)
+                        scope.launch {
+                            if (ok) vm.persist(snapshot(ReportStatus.SENT))
+                            snackbar.showSnackbar(vm.sendResult.value ?: "")
+                        }
+                    },
+                    enabled = !sending && smsCount > 0,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (smsCount > 0) "Also send SMS to $smsCount mobile number(s)" else "No mobile numbers for SMS")
+                }
+            }
+            Text(
+                "Email reaches ${vm.sendHelper.emailsOf(report.authorities).size} office(s). After sending, call or use the portal for offices without email (see the office list).",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             OutlinedButton(
                 onClick = {

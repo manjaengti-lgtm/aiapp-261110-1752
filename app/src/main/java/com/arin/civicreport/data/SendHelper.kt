@@ -110,30 +110,84 @@ class SendHelper(private val context: Context) {
         return this
     }
 
-    /** Opens a mail app with recipients, subject, body, photos, video and every attached file. */
-    fun sendEmail(report: Report, subject: String, body: String, attachMedia: Boolean = true): Boolean {
-        val recipients = emailsOf(report.authorities)
-        val uris = if (attachMedia) allUris(report) else emptyList()
-        val intent = Intent(if (uris.size > 1) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND).apply {
-            type = if (uris.isEmpty()) "message/rfc822" else "*/*"
+    /** What happened when the person pressed Send by email. */
+    enum class EmailResult { OPENED, OPENED_WITHOUT_FILES, NO_EMAIL_APP, NO_RECIPIENTS }
+
+    var lastEmailResult: EmailResult = EmailResult.OPENED
+        private set
+
+    private fun mailtoUri(recipients: List<String>, subject: String, body: String): Uri {
+        val to = recipients.joinToString(",")
+        val q = "subject=" + Uri.encode(subject) + "&body=" + Uri.encode(body)
+        return Uri.parse("mailto:$to?$q")
+    }
+
+    private fun buildSend(uris: List<Uri>, recipients: List<String>, subject: String, body: String): Intent =
+        Intent(if (uris.size > 1) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND).apply {
+            type = if (uris.isEmpty()) "text/plain" else "*/*"
             putExtra(Intent.EXTRA_EMAIL, recipients.toTypedArray())
+            putExtra(Intent.EXTRA_EMAIL, emailsOf(report.authorities).toTypedArray())
             putExtra(Intent.EXTRA_SUBJECT, subject)
             putExtra(Intent.EXTRA_TEXT, body)
             if (uris.size == 1) {
                 putExtra(Intent.EXTRA_STREAM, uris.first())
                 clipData = ClipData.newRawUri("evidence", uris.first())
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            } else withStreams(uris)
-            // Restrict the chooser to mail apps while still carrying attachments.
-            selector = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:"))
+            } else if (uris.size > 1) withStreams(uris)
         }
-        val chooser = Intent.createChooser(intent, "Send complaint by email").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (runCatching { context.startActivity(chooser) }.isSuccess) return true
-        // Some phones reject the selector; fall back to a plain share.
-        intent.selector = null
-        return runCatching {
-            context.startActivity(Intent.createChooser(intent, "Send complaint").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }.isSuccess
+
+    private fun start(intent: Intent): Boolean =
+        runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess
+
+    /**
+     * Opens an email app with recipients, subject, body, photos, video and every attached file.
+     * Finds the phone's real email apps (Gmail, Outlook, Samsung Email...) and targets them
+     * directly, because the generic "email only" filter shows an empty list on many phones.
+     */
+    fun sendEmail(report: Report, subject: String, body: String, attachMedia: Boolean = true): Boolean {
+        val recipients = emailsOf(report.authorities)
+        if (recipients.isEmpty()) {
+            lastEmailResult = EmailResult.NO_RECIPIENTS
+            return false
+        }
+        val uris = if (attachMedia) allUris(report) else emptyList()
+        val pm = context.packageManager
+        val mailPackages = runCatching {
+            pm.queryIntentActivities(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")), 0)
+                .map { it.activityInfo.packageName }.distinct()
+        }.getOrDefault(emptyList())
+
+        val base = buildSend(uris, recipients, subject, body)
+        val targeted = mailPackages.mapNotNull { pkg ->
+            Intent(base).setPackage(pkg).takeIf {
+                runCatching { pm.queryIntentActivities(it, 0).isNotEmpty() }.getOrDefault(false)
+            }
+        }
+
+        when {
+            targeted.size == 1 -> if (start(targeted.first())) {
+                lastEmailResult = EmailResult.OPENED; return true
+            }
+            targeted.size > 1 -> {
+                val chooser = Intent.createChooser(targeted.first(), "Send complaint by email")
+                    .putExtra(Intent.EXTRA_INITIAL_INTENTS, targeted.drop(1).toTypedArray())
+                if (start(chooser)) { lastEmailResult = EmailResult.OPENED; return true }
+            }
+        }
+        // An email app exists but would not take the files: send the text by mailto.
+        if (mailPackages.isNotEmpty()) {
+            val mailto = Intent(Intent.ACTION_SENDTO, mailtoUri(recipients, subject, body)).apply {
+                putExtra(Intent.EXTRA_EMAIL, recipients.toTypedArray())
+                putExtra(Intent.EXTRA_SUBJECT, subject)
+                putExtra(Intent.EXTRA_TEXT, body)
+            }
+            if (start(mailto)) {
+                lastEmailResult = if (uris.isEmpty()) EmailResult.OPENED else EmailResult.OPENED_WITHOUT_FILES
+                return true
+            }
+        }
+        lastEmailResult = EmailResult.NO_EMAIL_APP
+        return false
     }
 
     /**
@@ -157,19 +211,16 @@ class SendHelper(private val context: Context) {
         }.isSuccess
     }
 
+    /** Opens the SMS app once, addressed to every mobile number of the selected offices. */
     fun sendSms(report: Report, body: String): Boolean {
         val numbers = smsNumbersOf(report.authorities)
         if (numbers.isEmpty()) return false
-        var ok = true
-        numbers.take(4).forEach { number ->
-            val intent = Intent(Intent.ACTION_SENDTO).apply {
-                data = Uri.parse("smsto:${number.replace(" ", "")}")
-                putExtra("sms_body", body)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            if (runCatching { context.startActivity(intent) }.isFailure) ok = false
+        val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + numbers.joinToString(";"))).apply {
+            putExtra("sms_body", body)
         }
-        return ok
+        if (start(intent)) return true
+        // Some SMS apps take only one number at a time.
+        return start(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + numbers.first())).putExtra("sms_body", body))
     }
 
     fun openUrl(url: String): Boolean =
