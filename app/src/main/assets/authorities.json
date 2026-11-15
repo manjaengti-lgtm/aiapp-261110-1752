@@ -8,12 +8,12 @@
     "PMO"
    ],
    "level": "NATIONAL",
-   "phone": "+911123012312",
+   "phone": "+911123386447",
    "fax": "+911123016857",
    "address": "Prime Minister's Office, Seva Teerth, New Delhi - 110011",
    "url": "https://www.pmindia.gov.in/en/interact-with-honble-pm/",
-   "note": "PMO moved from South Block to Seva Teerth in Feb 2026. It takes complaints through 'Write to the Prime Minister' on pmindia.gov.in, by post or by fax, not by email.",
-   "source": "pmindia.gov.in FAQ; india.gov.in"
+   "note": "Complaints: 'Write to the Prime Minister' on pmindia.gov.in, by post, by hand at the PMO Dak Counter, or by fax 011-23016857. 011-23386447 is the facilitation number to ask the status of a letter. No complaint email.",
+   "source": "pmindia.gov.in FAQ & proactive disclosure (Seva Teerth)"
   },
   {
    "id": "cpgrams",
@@ -22,11 +22,9 @@
     "CPGRAMS"
    ],
    "level": "NATIONAL",
-   "phone": "+919540613360",
-   "address": "Department of Administrative Reforms & Public Grievances, Sardar Patel Bhawan, Sansad Marg, New Delhi - 110001",
    "url": "https://pgportal.gov.in",
-   "note": "File here for a tracked registration number; files can be uploaded. Grievances sent by email are not attended to.",
-   "source": "pgportal.gov.in"
+   "note": "File online for a tracked registration number; files can be uploaded. Grievances sent by email are not attended to.",
+   "source": "pgportal.gov.in Contact Us"
   },
   {
    "id": "cpcb",
@@ -42,7 +40,7 @@
    ],
    "address": "Parivesh Bhawan, East Arjun Nagar, Delhi - 110032",
    "url": "https://cpcb.nic.in",
-   "source": "cpcb.nic.in organisational structure"
+   "source": "cpcb.nic.in organisational structure; indiascienceandtechnology.gov.in"
   },
   {
    "id": "moefcc",
@@ -52,13 +50,15 @@
    ],
    "level": "NATIONAL",
    "email": "secy-moef@nic.in",
-   "phone": "+911120819220",
+   "phone": "+911120819308",
    "otherPhones": [
+    "+911120819220",
     "+911120819280"
    ],
+   "fax": "+911120819238",
    "address": "Indira Paryavaran Bhawan, Jor Bagh Road, New Delhi - 110003",
    "url": "https://moef.gov.in",
-   "source": "igod.gov.in"
+   "source": "igod.gov.in (Govt of India directory)"
   },
   {
    "id": "morth",
@@ -68,36 +68,34 @@
    ],
    "level": "NATIONAL",
    "phone": "1033",
-   "address": "Transport Bhawan, 1 Parliament Street, New Delhi - 110001",
    "url": "https://pgportal.gov.in",
    "note": "1033 is the 24x7 national highway helpline (potholes, accidents). Written grievances go through CPGRAMS, choosing NHAI or MoRTH.",
    "source": "NHAI / PIB"
   },
   {
    "id": "mines-moi",
-   "name": "Ministry of Mines",
+   "name": "Ministry of Mines – Secretary",
    "roles": [
     "MINISTRY_MINES"
    ],
    "level": "NATIONAL",
-   "phone": "+911123070396",
-   "address": "3rd Floor, A Wing, Shastri Bhawan, New Delhi - 110001",
+   "email": "secy-mines@nic.in",
+   "address": "Ministry of Mines, GPOA Block-3, Netaji Nagar, New Delhi",
    "url": "https://mines.gov.in",
-   "note": "Illegal mining of minor minerals (sand, stone) is enforced by the state; use CPGRAMS to escalate.",
-   "source": "igod.gov.in"
+   "note": "The ministry moved out of Shastri Bhawan in 2026, so old Shastri Bhawan phone numbers may not work. Illegal mining of sand and stone is enforced by the state.",
+   "source": "igod.gov.in (email); MoHUA office memorandum on GPOA-3 Netaji Nagar (address)"
   },
   {
    "id": "mohua",
-   "name": "Ministry of Housing & Urban Affairs – Public Grievance Cell",
+   "name": "Ministry of Housing & Urban Affairs – Secretary",
    "roles": [
     "MOHUA"
    ],
    "level": "NATIONAL",
-   "email": "sopg-mud@nic.in",
-   "phone": "+911123062010",
-   "address": "Ground Floor, near Gate No. 1, Nirman Bhawan, New Delhi - 110011",
+   "email": "secyurban@nic.in",
    "url": "https://mohua.gov.in",
-   "source": "mohua.gov.in grievance page"
+   "note": "Nirman Bhawan was demolished in 2026; send letters through CPGRAMS or by email.",
+   "source": "igod.gov.in (Govt of India directory)"
   },
   {
    "id": "wccb",
@@ -120,11 +118,10 @@
     "CVC"
    ],
    "level": "NATIONAL",
-   "phone": "+911124651020",
    "address": "The Secretary, Central Vigilance Commission, Satarkta Bhawan, Block-A, GPO Complex, INA, New Delhi - 110023",
    "url": "https://portal.cvc.gov.in",
-   "note": "Only for corruption by central government staff, central PSUs and banks. Lodge online or by post; email complaints are not entertained.",
-   "source": "cvc.gov.in public notices"
+   "note": "Only for corruption by central government staff, central PSUs and banks. Lodge on portal.cvc.gov.in or by letter.",
+   "source": "CVC master circular 10/MC/2026"
   },
   {
    "id": "nhrc",
@@ -160,7 +157,7 @@
    "fax": "+911123077931",
    "address": "Faridkot House, Copernicus Marg, New Delhi - 110001",
    "url": "https://greentribunal.gov.in",
-   "note": "NGT hears environmental applications; a letter with evidence can be taken up. Assam and the North East come under the Eastern Zone Bench, Kolkata.",
+   "note": "Assam and the North East come under the Eastern Zone Bench, Kolkata.",
    "source": "greentribunal.gov.in",
    "defaultSelected": false
   },
@@ -175,7 +172,7 @@
    "phone": "+913323248094",
    "address": "Finance Centre, 3rd Floor, Block III B, New Town, Kolkata - 700157",
    "url": "https://greentribunal.gov.in",
-   "source": "greentribunal.gov.in telephone directory",
+   "source": "greentribunal.gov.in Eastern telephone directory",
    "defaultSelected": false
   },
   {
@@ -192,11 +189,10 @@
     "+911123116402",
     "+911123116403"
    ],
-   "fax": "+911123381508",
    "address": "The Registrar, Supreme Court of India, Tilak Marg, New Delhi - 110001",
    "url": "https://www.sci.gov.in",
-   "note": "The court can treat a letter petition to the Chief Justice as a PIL. Filing a case otherwise needs e-filing or an advocate.",
-   "source": "sci.gov.in",
+   "note": "A letter petition to the Chief Justice can be treated as a PIL. Filing a case otherwise needs e-filing or an advocate.",
+   "source": "india.gov.in contact directory; sci.gov.in",
    "defaultSelected": false
   }
  ],
@@ -206,7 +202,7 @@
    "offices": [
     {
      "id": "as-cm",
-     "name": "Chief Minister's Office, Assam – Grievance Cell",
+     "name": "Chief Minister's Office, Assam",
      "roles": [
       "STATE_CM"
      ],
@@ -214,16 +210,15 @@
      "email": "cm@assam.gov.in",
      "phone": "+913612262222",
      "otherPhones": [
-      "+913612237043"
+      "+913612237468"
      ],
-     "fax": "+913612262069",
-     "address": "CM Grievance Cell, J Block, Lok Sewa Bhawan, Janata Bhawan, Dispur, Guwahati - 781006",
+     "address": "J Block, Lok Sewa Bhawan, Janata Bhawan, Dispur, Guwahati - 781006",
      "url": "https://cm.assam.gov.in",
-     "source": "cm.assam.gov.in; igod.gov.in"
+     "source": "cm.assam.gov.in (phone, address); igod.gov.in (email)"
     },
     {
      "id": "as-cs",
-     "name": "Chief Secretary, Government of Assam",
+     "name": "Chief Secretary, Government of Assam (Dr Ravi Kota)",
      "roles": [
       "CHIEF_SECRETARY"
      ],
@@ -246,6 +241,19 @@
      "source": "pwdroads.assam.gov.in contact"
     },
     {
+     "id": "as-pwd-sectt",
+     "name": "Public Works Roads Department, Assam Secretariat (Commissioner & Spl. Secretary)",
+     "roles": [
+      "PWD"
+     ],
+     "level": "STATE",
+     "email": "as-guw1@nic.in",
+     "phone": "+913612237378",
+     "address": "Ground Floor, Block B, Assam Secretariat, Dispur, Guwahati - 781006",
+     "url": "https://pwdroads.assam.gov.in",
+     "source": "pwdroads.assam.gov.in contact"
+    },
+    {
      "id": "as-forest",
      "name": "PCCF & Head of Forest Force, Assam",
      "roles": [
@@ -259,6 +267,7 @@
      ],
      "address": "Aranya Bhawan, Panjabari, Guwahati - 781037",
      "url": "https://forest.assam.gov.in",
+     "note": "0361-2333252 is the Assam Forest helpline.",
      "source": "forest.assam.gov.in; environmentandforest.assam.gov.in"
     },
     {
@@ -269,9 +278,11 @@
      ],
      "level": "STATE",
      "email": "pccf.wl.assam@gmail.com",
+     "phone": "+913612333253",
      "address": "Aranya Bhawan, Panjabari, Guwahati - 781037",
      "url": "https://forest.assam.gov.in",
-     "source": "forest.assam.gov.in key officials"
+     "note": "0361-2333253 is the Wildlife Control Room.",
+     "source": "forest.assam.gov.in contact & key officials"
     },
     {
      "id": "as-envdept",
@@ -285,7 +296,7 @@
      "phone": "+913612237329",
      "address": "D Block, 2nd Floor, Janata Bhawan, Dispur, Guwahati - 781006",
      "url": "https://environmentandforest.assam.gov.in",
-     "source": "environmentandforest.assam.gov.in"
+     "source": "environmentandforest.assam.gov.in contact"
     },
     {
      "id": "as-dgm",
@@ -305,15 +316,16 @@
     },
     {
      "id": "as-minesdept",
-     "name": "Mines & Minerals Department, Assam (Addl. Chief Secretary)",
+     "name": "Mines & Minerals Department, Assam",
      "roles": [
       "MINES"
      ],
      "level": "STATE",
-     "email": "ajaytewari93@nic.in",
+     "email": "minesminerals.assam@gmail.com",
      "phone": "+913612237281",
-     "address": "2nd Floor, I Block, Janata Bhawan, Dispur, Guwahati - 781006",
+     "address": "Room No. 401-A, A Block, 4th Floor, Janata Bhawan, Dispur, Guwahati - 781006",
      "url": "https://mines.assam.gov.in",
+     "note": "Additional Chief Secretary: ajaytewari93@nic.in (0361-2237281).",
      "source": "mines.assam.gov.in contact"
     },
     {
@@ -328,11 +340,10 @@
      "otherPhones": [
       "+913612550258"
      ],
-     "fax": "+913612550259",
      "address": "Bamunimaidam, Guwahati - 781021",
      "url": "https://pcb.assam.gov.in",
      "note": "Also: chairman@pcbassam.org, info@pcbassam.org",
-     "source": "CPCB SPCB directory; pcb.assam.gov.in"
+     "source": "pcb.assam.gov.in contact; CPCB SPCB directory"
     },
     {
      "id": "as-dgp",
@@ -352,7 +363,7 @@
      "address": "Assam Police Headquarters, Ulubari, Guwahati - 781007",
      "url": "https://police.assam.gov.in",
      "note": "For an emergency or a crime in progress dial 112.",
-     "source": "police.assam.gov.in contact"
+     "source": "police.assam.gov.in contact & officers directory"
     },
     {
      "id": "as-vac",
@@ -364,8 +375,7 @@
      "email": "adgp-vac@assampolice.gov.in",
      "phone": "18003453767",
      "otherPhones": [
-      "+913612462294",
-      "+916026903409"
+      "+913612462294"
      ],
      "address": "Directorate of Vigilance & Anti-Corruption, Srimantapur, Guwahati - 781032",
      "url": "https://dgvigilance.assam.gov.in",
@@ -380,7 +390,7 @@
      "level": "STATE",
      "address": "Office of the Lokayukta, Assam, Shaktigarh Path, Bylane 2, House No. 15 (3rd Floor), Bhangagarh, Guwahati - 781005",
      "url": "https://www.assamlokayukta.gov.in",
-     "note": "Complaints go on the Lokayukta's prescribed form (on its website), by post or by hand.",
+     "note": "No phone or email is published. Complaints go on the prescribed form (on its website), by post or by hand.",
      "source": "assamlokayukta.gov.in complaint form"
     },
     {
@@ -393,31 +403,29 @@
      "email": "support@apdcl.org",
      "phone": "1912",
      "otherPhones": [
-      "+917575999666",
-      "+912235296117"
+      "+917575999666"
      ],
+     "address": "Bijulee Bhawan, Paltan Bazar, Guwahati - 781001",
      "url": "https://www.apdcl.org",
-     "note": "1912 is toll free inside Assam; 7575999666 is WhatsApp.",
-     "source": "APDCL helplines"
+     "note": "1912 is toll free inside Assam; 7575999666 is WhatsApp. Complaints can also be lodged in the myBijulee app.",
+     "source": "APDCL helplines as reported by Pratidin Time / Sentinel"
     },
     {
      "id": "as-hc",
-     "name": "Gauhati High Court – Registrar General",
+     "name": "Gauhati High Court",
      "roles": [
       "HIGH_COURT"
      ],
      "level": "JUDICIARY",
-     "email": "hc-asm@nic.in",
      "phone": "+913612600008",
      "otherPhones": [
       "+913612731245",
       "+913612735869"
      ],
-     "fax": "+913612735863",
-     "address": "The Gauhati High Court, M.G. Road, Guwahati - 781001",
+     "address": "The Registrar General, The Gauhati High Court, M.G. Road, Guwahati - 781001",
      "url": "https://ghconline.gov.in",
-     "note": "A PIL letter can be addressed to the Chief Justice. Also: highcourt.ghc@gmail.com",
-     "source": "Gauhati High Court directory",
+     "note": "No complaint email is published. A PIL letter can be posted to the Chief Justice at this address.",
+     "source": "ecourtsghc.assam.gov.in contact",
      "defaultSelected": false
     }
    ]
@@ -497,7 +505,6 @@
      "email": "cmoffice-arn@gov.in",
      "phone": "+913602212915",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
      "source": "igod.gov.in"
     },
     {
@@ -524,10 +531,9 @@
       "STATE_CM"
      ],
      "level": "STATE",
-     "phone": "18003453818",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "mn-pcb",
@@ -553,8 +559,8 @@
      ],
      "level": "STATE",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "mz-pcb",
@@ -581,8 +587,8 @@
      ],
      "level": "STATE",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "tr-pcb",
@@ -609,8 +615,8 @@
      ],
      "level": "STATE",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "sk-pcb",
@@ -637,8 +643,8 @@
      ],
      "level": "STATE",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "mh-pcb",
@@ -665,10 +671,9 @@
       "STATE_CM"
      ],
      "level": "STATE",
-     "phone": "1076",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "dl-pcb",
@@ -695,8 +700,8 @@
      ],
      "level": "STATE",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "ka-pcb",
@@ -722,9 +727,9 @@
       "STATE_CM"
      ],
      "level": "STATE",
-     "phone": "+914425671764",
-     "url": "https://cmhelpline.tn.gov.in",
-     "source": "state CM helpline list"
+     "url": "https://pgportal.gov.in",
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "tn-pcb",
@@ -750,13 +755,9 @@
       "STATE_CM"
      ],
      "level": "STATE",
-     "phone": "+919137091370",
-     "otherPhones": [
-      "18003458244"
-     ],
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "wb-pcb",
@@ -784,8 +785,7 @@
      "level": "STATE",
      "phone": "1076",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "source": "upite.gov.in (CM Helpline 1076)"
     },
     {
      "id": "up-pcb",
@@ -811,13 +811,9 @@
       "STATE_CM"
      ],
      "level": "STATE",
-     "phone": "+916122201000",
-     "otherPhones": [
-      "+916122205800"
-     ],
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "br-pcb",
@@ -843,13 +839,9 @@
       "STATE_CM"
      ],
      "level": "STATE",
-     "phone": "+917923250073",
-     "otherPhones": [
-      "+917923250074"
-     ],
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "gj-pcb",
@@ -875,10 +867,9 @@
       "STATE_CM"
      ],
      "level": "STATE",
-     "phone": "181",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "rj-pcb",
@@ -904,10 +895,9 @@
       "STATE_CM"
      ],
      "level": "STATE",
-     "phone": "+916742390902",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "od-pcb",
@@ -933,9 +923,9 @@
       "STATE_CM"
      ],
      "level": "STATE",
-     "phone": "181",
-     "url": "https://cmhelpline.mp.gov.in",
-     "source": "state CM helpline list"
+     "url": "https://pgportal.gov.in",
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "mp-pcb",
@@ -961,10 +951,9 @@
       "STATE_CM"
      ],
      "level": "STATE",
-     "phone": "18004257211",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "kl-pcb",
@@ -990,12 +979,9 @@
       "STATE_CM"
      ],
      "level": "STATE",
-     "otherPhones": [
-      "+919494181920"
-     ],
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "tg-pcb",
@@ -1021,10 +1007,9 @@
       "STATE_CM"
      ],
      "level": "STATE",
-     "phone": "1100",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "pb-pcb",
@@ -1050,10 +1035,9 @@
       "STATE_CM"
      ],
      "level": "STATE",
-     "phone": "1902",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "ap-pcb",
@@ -1079,10 +1063,9 @@
       "STATE_CM"
      ],
      "level": "STATE",
-     "phone": "+911723322500",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "hr-pcb",
@@ -1111,8 +1094,7 @@
      "level": "STATE",
      "phone": "1100",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "source": "ddtg.hp.gov.in (CM Seva Sankalp 1100)"
     },
     {
      "id": "hp-pcb",
@@ -1138,10 +1120,9 @@
       "STATE_CM"
      ],
      "level": "STATE",
-     "phone": "181",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "jh-pcb",
@@ -1167,10 +1148,9 @@
       "STATE_CM"
      ],
      "level": "STATE",
-     "phone": "1076",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "cg-pcb",
@@ -1196,10 +1176,9 @@
       "STATE_CM"
      ],
      "level": "STATE",
-     "phone": "1905",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "uk-pcb",
@@ -1226,8 +1205,8 @@
      ],
      "level": "STATE",
      "url": "https://pgportal.gov.in",
-     "note": "Use the state grievance portal or CPGRAMS (choose the state) for a written complaint.",
-     "source": "state CM helpline list"
+     "note": "No verified direct contact on file. Use CPGRAMS (choose the state) or the state's CM portal.",
+     "source": "CPGRAMS"
     },
     {
      "id": "ga-pcb",
@@ -1271,7 +1250,6 @@
     "782480",
     "782482",
     "782441",
-    "782486",
     "782485"
    ],
    "offices": [
@@ -1286,18 +1264,7 @@
      "phone": "+913671272257",
      "address": "Office of the District Commissioner, Diphu, Karbi Anglong - 782460",
      "url": "https://karbianglong.assam.gov.in",
-     "source": "karbianglong.assam.gov.in"
-    },
-    {
-     "id": "ka-dc-eoffice",
-     "name": "DC Office Karbi Anglong – e-Office (petitions & complaints)",
-     "roles": [
-      "DISTRICT"
-     ],
-     "level": "DISTRICT",
-     "email": "kanglong@assam.gov.in",
-     "note": "The DC asked the public to send applications, petitions and complaints to this e-office address.",
-     "source": "The Hills Times"
+     "source": "karbianglong.assam.gov.in DC profile"
     },
     {
      "id": "ka-sp",
@@ -1309,9 +1276,9 @@
      "email": "sp-kanglong@assampolice.gov.in",
      "phone": "+913671272254",
      "otherPhones": [
-      "+916026900757"
+      "+916026900748"
      ],
-     "source": "Assam Police district SP list"
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     },
     {
      "id": "ka-kaac",
@@ -1325,26 +1292,75 @@
      ],
      "level": "LOCAL",
      "email": "ps-ka@nic.in",
-     "phone": "+919435027404",
+     "phone": "+913671272504",
      "otherPhones": [
-      "+913671272504"
+      "+919435027404"
      ],
      "address": "KAAC Secretariat, Diphu, Karbi Anglong - 782460",
      "url": "https://karbianglong.co.in",
      "note": "Karbi Anglong is a Sixth Schedule area: roads (PWD), forests, water supply and most development departments are under the KAAC. Also: kaac.council@gmail.com",
-     "source": "karbianglong.gov.in; KAAC orders"
+     "source": "KAAC Secretariat orders (ps-ka@nic.in, kaac.council@gmail.com); karbianglong.gov.in (phones)"
     },
     {
-     "id": "ka-cem",
-     "name": "Chief Executive Member's Office, KAAC",
+     "id": "ka-pwd",
+     "name": "Chief Engineer, PWD (R&B), Karbi Anglong",
      "roles": [
-      "AUTONOMOUS_COUNCIL"
+      "PWD"
      ],
      "level": "LOCAL",
-     "email": "cem-kaac@gov.in",
-     "address": "Chief Executive Member Office, KAAC, Diphu - 782460",
-     "url": "https://cemo.karbianglong.co.in",
-     "source": "cemo.karbianglong.co.in"
+     "phone": "+919435735301",
+     "otherPhones": [
+      "+919954537179",
+      "+919864015235"
+     ],
+     "note": "Other numbers: Executive Engineer PWD (R) Dokmoka 99545-37179, Bakalia 98640-15235.",
+     "source": "Karbi Anglong DC office contact list (karbianglong.gov.in). Officer mobiles can change on transfer."
+    },
+    {
+     "id": "ka-dfo",
+     "name": "Divisional Forest Officers, Karbi Anglong",
+     "roles": [
+      "FOREST",
+      "WILDLIFE"
+     ],
+     "level": "LOCAL",
+     "phone": "+919435458334",
+     "otherPhones": [
+      "+919435329031",
+      "+919678273375"
+     ],
+     "note": "DFO (East) 94354-58334; DFO (West) 94353-29031 / 96782-73375.",
+     "source": "Karbi Anglong DC office contact list (karbianglong.gov.in). Officer mobiles can change on transfer."
+    },
+    {
+     "id": "ka-phe",
+     "name": "Public Health Engineering (water supply), Karbi Anglong",
+     "roles": [
+      "WATER"
+     ],
+     "level": "LOCAL",
+     "phone": "+919435509495",
+     "otherPhones": [
+      "+919678009812",
+      "+918638143023"
+     ],
+     "note": "EE PHE (Urban) 94355-09495; Addl CE / EE PHE (Rural) 96780-09812, 86381-43023.",
+     "source": "Karbi Anglong DC office contact list (karbianglong.gov.in). Officer mobiles can change on transfer."
+    },
+    {
+     "id": "ka-apdcl",
+     "name": "APDCL Karbi Anglong (Diphu / Howraghat)",
+     "roles": [
+      "POWER"
+     ],
+     "level": "LOCAL",
+     "phone": "+919678404842",
+     "otherPhones": [
+      "+917002566727",
+      "+919854067057"
+     ],
+     "note": "DGM 96784-04842; AGM Diphu 70025-66727; AGM Howraghat 98540-67057.",
+     "source": "Karbi Anglong DC office contact list (karbianglong.gov.in). Officer mobiles can change on transfer."
     },
     {
      "id": "ka-diphu-mb",
@@ -1356,7 +1372,7 @@
      "email": "dtcdiphumb1@gmail.com",
      "address": "Ward No. 5, Diphu, Karbi Anglong",
      "url": "https://diphu.assamurban.in",
-     "source": "diphu.assamurban.in"
+     "source": "diphu.assamurban.in (Assam Urban Development site)"
     },
     {
      "id": "ka-dto",
@@ -1381,7 +1397,9 @@
     "kheroni",
     "donkamokam"
    ],
-   "postcodes": [],
+   "postcodes": [
+    "782486"
+   ],
    "offices": [
     {
      "id": "wka-dc",
@@ -1390,8 +1408,10 @@
       "DISTRICT"
      ],
      "level": "DISTRICT",
-     "email": "dc-westkarbianglong@nic.in",
-     "source": "Assam DC list"
+     "address": "Office of the District Commissioner, West Karbi Anglong, Hamren",
+     "url": "https://westkarbianglong.assam.gov.in",
+     "note": "No verified email found; use the district website or the SP below.",
+     "source": "westkarbianglong.assam.gov.in"
     },
     {
      "id": "wka-sp",
@@ -1405,7 +1425,7 @@
      "otherPhones": [
       "+916026901227"
      ],
-     "source": "Assam Police district SP list"
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     },
     {
      "id": "wka-kaac",
@@ -1418,11 +1438,11 @@
      ],
      "level": "LOCAL",
      "email": "ps-ka@nic.in",
-     "phone": "+919435027404",
+     "phone": "+913671272504",
      "address": "KAAC Secretariat, Diphu - 782460",
      "url": "https://karbianglong.co.in",
      "note": "KAAC administers both Karbi Anglong and West Karbi Anglong.",
-     "source": "karbianglong.gov.in"
+     "source": "KAAC Secretariat orders"
     }
    ]
   },
@@ -1447,7 +1467,8 @@
      "level": "DISTRICT",
      "email": "dc-golaghat@nic.in",
      "phone": "+913774280222",
-     "source": "Assam DC list"
+     "url": "https://golaghat.assam.gov.in",
+     "source": "golaghat.assam.gov.in"
     },
     {
      "id": "gol-sp",
@@ -1458,7 +1479,10 @@
      "level": "DISTRICT",
      "email": "sp-golaghat@assampolice.gov.in",
      "phone": "+913774285233",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026900499"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1480,7 +1504,9 @@
      ],
      "level": "DISTRICT",
      "email": "dc-jorhat@nic.in",
-     "source": "Assam DC list"
+     "phone": "+913762320020",
+     "url": "https://jorhat.assam.gov.in",
+     "source": "jorhat.assam.gov.in DC profile"
     },
     {
      "id": "jor-sp",
@@ -1491,7 +1517,10 @@
      "level": "DISTRICT",
      "email": "sp-jorhat@assampolice.gov.in",
      "phone": "+913762320021",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026900672"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1512,9 +1541,10 @@
       "DISTRICT"
      ],
      "level": "DISTRICT",
-     "email": "dc-dimahasao@nic.in",
-     "phone": "+913673236222",
-     "source": "Assam DC list"
+     "address": "Office of the District Commissioner, New Court Building, Haflong",
+     "url": "https://dimahasao.assam.gov.in",
+     "note": "No verified email found; use the district website or the SP below.",
+     "source": "dimahasao.assam.gov.in"
     },
     {
      "id": "dh-sp",
@@ -1525,7 +1555,10 @@
      "level": "DISTRICT",
      "email": "sp-dimahasao@assampolice.gov.in",
      "phone": "+913673236325",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026900437"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1546,7 +1579,10 @@
      "level": "DISTRICT",
      "email": "sp-kamrup@assampolice.gov.in",
      "phone": "+913612684402",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026900713"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1567,7 +1603,10 @@
      "level": "DISTRICT",
      "email": "sp-barpeta@assampolice.gov.in",
      "phone": "+913665236254",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026900150"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1588,7 +1627,10 @@
      "level": "DISTRICT",
      "email": "sp-sivasagar@assampolice.gov.in",
      "phone": "+913772222124",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026900977"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1609,7 +1651,10 @@
      "level": "DISTRICT",
      "email": "sp-dibrugarh@assampolice.gov.in",
      "phone": "+913732324424",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026901300"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1630,7 +1675,10 @@
      "level": "DISTRICT",
      "email": "sp-dhubri@assampolice.gov.in",
      "phone": "+913662230014",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026900357"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1643,16 +1691,6 @@
    "postcodes": [],
    "offices": [
     {
-     "id": "goal-dc",
-     "name": "District Commissioner, Goalpara",
-     "roles": [
-      "DISTRICT"
-     ],
-     "level": "DISTRICT",
-     "email": "dc-goalpara@nic.in",
-     "source": "Assam DC list"
-    },
-    {
      "id": "goal-sp",
      "name": "Superintendent of Police, Goalpara",
      "roles": [
@@ -1661,7 +1699,10 @@
      "level": "DISTRICT",
      "email": "sp-goalpara@assampolice.gov.in",
      "phone": "+913663240161",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026900465"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1682,7 +1723,10 @@
      "level": "DISTRICT",
      "email": "sp-cachar@assampolice.gov.in",
      "phone": "+913842245866",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026900230"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1702,7 +1746,11 @@
      ],
      "level": "DISTRICT",
      "email": "sp-nagaon@assampolice.gov.in",
-     "source": "Assam Police district SP list"
+     "phone": "+913672235624",
+     "otherPhones": [
+      "+916026900895"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1723,7 +1771,10 @@
      "level": "DISTRICT",
      "email": "sp-karimganj@assampolice.gov.in",
      "phone": "+913843262371",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026900776"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1743,7 +1794,11 @@
      ],
      "level": "DISTRICT",
      "email": "sp-sonitpur@assampolice.gov.in",
-     "source": "Assam Police district SP list"
+     "phone": "+913712230593",
+     "otherPhones": [
+      "+916026901018"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1763,7 +1818,11 @@
      ],
      "level": "DISTRICT",
      "email": "sp-darrang@assampolice.gov.in",
-     "source": "Assam Police district SP list"
+     "phone": "+913713222214",
+     "otherPhones": [
+      "+916026900320"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1776,16 +1835,6 @@
    "postcodes": [],
    "offices": [
     {
-     "id": "lakh-dc",
-     "name": "District Commissioner, Lakhimpur",
-     "roles": [
-      "DISTRICT"
-     ],
-     "level": "DISTRICT",
-     "email": "dc-lakhimpur@nic.in",
-     "source": "Assam DC list"
-    },
-    {
      "id": "lakh-sp",
      "name": "Superintendent of Police, Lakhimpur",
      "roles": [
@@ -1793,7 +1842,11 @@
      ],
      "level": "DISTRICT",
      "email": "sp-lakhimpur@assampolice.gov.in",
-     "source": "Assam Police district SP list"
+     "phone": "+913752222302",
+     "otherPhones": [
+      "+916026900825"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1814,7 +1867,10 @@
      "level": "DISTRICT",
      "email": "sp-nalbari@assampolice.gov.in",
      "phone": "+913624220466",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026900944"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1835,7 +1891,10 @@
      "level": "DISTRICT",
      "email": "sp-tinsukia@assampolice.gov.in",
      "phone": "+913742331468",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026901066"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1856,7 +1915,10 @@
      "level": "DISTRICT",
      "email": "sp-dhemaji@assampolice.gov.in",
      "phone": "+913753224396",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026900339"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1869,16 +1931,6 @@
    "postcodes": [],
    "offices": [
     {
-     "id": "hail-dc",
-     "name": "District Commissioner, Hailakandi",
-     "roles": [
-      "DISTRICT"
-     ],
-     "level": "DISTRICT",
-     "email": "dc-hailakandi@nic.in",
-     "source": "Assam DC list"
-    },
-    {
      "id": "hail-sp",
      "name": "Superintendent of Police, Hailakandi",
      "roles": [
@@ -1887,7 +1939,10 @@
      "level": "DISTRICT",
      "email": "sp-hailakandi@assampolice.gov.in",
      "phone": "+913844222242",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026900618"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1908,7 +1963,10 @@
      "level": "DISTRICT",
      "email": "sp-morigaon@assampolice.gov.in",
      "phone": "+913678240238",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026900873"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1921,16 +1979,6 @@
    "postcodes": [],
    "offices": [
     {
-     "id": "bong-dc",
-     "name": "District Commissioner, Bongaigaon",
-     "roles": [
-      "DISTRICT"
-     ],
-     "level": "DISTRICT",
-     "email": "dc-bongaigaon@nic.in",
-     "source": "Assam DC list"
-    },
-    {
      "id": "bong-sp",
      "name": "Superintendent of Police, Bongaigaon",
      "roles": [
@@ -1939,7 +1987,10 @@
      "level": "DISTRICT",
      "email": "sp-bongaigaon@assampolice.gov.in",
      "phone": "+913664230898",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026900207"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   },
@@ -1960,7 +2011,10 @@
      "level": "DISTRICT",
      "email": "sp-charaideo@assampolice.gov.in",
      "phone": "+913772256015",
-     "source": "Assam Police district SP list"
+     "otherPhones": [
+      "+916026900267"
+     ],
+     "source": "Assam Police officers directory (police.assam.gov.in)"
     }
    ]
   }

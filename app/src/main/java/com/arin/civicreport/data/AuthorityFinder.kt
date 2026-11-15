@@ -29,6 +29,7 @@ class AuthorityFinder(private val context: Context) {
         val address: String? = null,
         val url: String? = null,
         val note: String? = null,
+        val source: String? = null,
         val defaultSelected: Boolean = true
     ) {
         val roleSet: Set<AuthorityRole>
@@ -120,7 +121,8 @@ class AuthorityFinder(private val context: Context) {
             address = address,
             note = note,
             otherPhones = otherPhones,
-            defaultSelected = defaultSelected
+            defaultSelected = defaultSelected,
+            source = source
         )
     }
 

@@ -80,7 +80,9 @@ data class Authority(
     val otherPhones: List<String> = emptyList(),
     /** Ticked by default. Courts and tribunals start unticked: they take petitions, not complaints. */
     val defaultSelected: Boolean = true,
-    val custom: Boolean = false
+    val custom: Boolean = false,
+    /** Where this contact was taken from, so the person can check it. */
+    val source: String? = null
 ) {
     val hasContact: Boolean
         get() = !email.isNullOrBlank() || !phone.isNullOrBlank() || !url.isNullOrBlank() ||

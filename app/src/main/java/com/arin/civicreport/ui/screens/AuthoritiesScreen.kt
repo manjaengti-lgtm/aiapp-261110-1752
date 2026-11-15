@@ -237,6 +237,13 @@ private fun AuthorityCard(
                 authority.note?.let {
                     Text(it, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                authority.source?.let {
+                    Text(
+                        "Source: $it",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
             }
             Column {
                 authority.email?.let { mail ->
