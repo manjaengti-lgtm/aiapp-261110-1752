@@ -401,22 +401,20 @@ object Prompt {
             (promiseWords.containsMatchIn(tail.substringAfterLast("\n\n")) && tail.length < 300 && !tail.contains("Summary", true))
     }
 
-    private val researchStall = Regex(
-        """(?i)\b(search(ing)?|look(ing)?( (it|them) )?up|check(ing)?|continu(e|ing)|carry(ing)? on|keep going|next( up)?|then i|after that|let me|i'?ll|going to|moving on|pull(ing)? up|gather(ing)?)\b""",
-    )
 
-    /**
-     * True when a reply in a research/search task is just a status line ("Searching for X next.", "Continuing…")
-     * instead of a real search tag or a finished report — so the task stalled and should be nudged on.
-     */
-    fun stalledResearch(reply: String): Boolean {
+    /** True when the reply is a real, finished report (long or structured) rather than a status line. */
+    fun looksLikeReport(reply: String): Boolean {
+        val t = clean(reply).trim()
+        return t.length > 700 || t.lines().count { it.trim().isNotEmpty() } >= 8 || t.contains("##") ||
+            Regex("(?i)\\b(in summary|in conclusion|overall|to sum up|here (is|are)|the answer is)\\b").containsMatchIn(t)
+    }
+
+    /** A short status line ("Got X. Now the Y.", "Searching next.") that isn't a finished report or a question. */
+    fun isShortStatus(reply: String): Boolean {
         val t = clean(reply).trim()
         if (t.isEmpty()) return true
         if (t.endsWith("?")) return false
-        // A finished report is long and has structure; a stall is a short status line.
-        if (t.length > 600 || t.lines().count { it.trim().isNotEmpty() } > 8) return false
-        return looksUnfinished(reply) || t.endsWith("next.") || t.endsWith("next") ||
-            researchStall.containsMatchIn(t.takeLast(200))
+        return !looksLikeReport(reply) && t.length < 450
     }
 
     /** The command the reply asks to run, if any. */

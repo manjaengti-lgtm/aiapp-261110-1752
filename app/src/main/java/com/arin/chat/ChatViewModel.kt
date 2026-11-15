@@ -1330,18 +1330,25 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                             liveText = ""
                             continue
                         }
-                        // Research: said "searching next" but sent no <search> tag, so it stalled. Search, or write the report.
-                        if ((deep || useSearch) && researchNudges < 6 && searches < Prompt.MAX_DEEP_SEARCHES &&
-                            Prompt.searchQueryAnywhere(full) == null && Prompt.stalledResearch(full)
+                        // Research: it stopped with a short status line instead of searching or writing the report. Push it on.
+                        val stalled = if (deep) !Prompt.looksLikeReport(full) else searches > 0 && Prompt.isShortStatus(full)
+                        if ((deep || useSearch) && researchNudges < 8 && searches < Prompt.MAX_DEEP_SEARCHES &&
+                            Prompt.searchQueryAnywhere(full) == null && stalled
                         ) {
                             researchNudges++
                             turns += Turn(false, full)
+                            val mustReport = searches >= 4 || researchNudges >= 4
                             turns += Turn(
                                 true,
-                                "You described your next step but didn't act, so nothing happened and you stopped. Don't stop. Do ONE now: " +
-                                    "run the next search as the ONLY thing in your reply — <search>your query</search> — and nothing else; " +
-                                    "OR, if you already have enough, write the FULL report now with headings, the key facts and a Sources " +
-                                    "list, and end by telling me plainly what I can do next. Never reply with just \"searching next\" again.",
+                                if (mustReport)
+                                    "Stop searching now and WRITE THE FULL ANSWER using everything you've found so far. Put the actual " +
+                                        "information (names, numbers, addresses, facts — not a summary of your steps), with headings and a " +
+                                        "Sources list, and end with one line telling me what I can do next. Do not reply with another status line."
+                                else
+                                    "You stopped with a status line instead of finishing. Don't stop. Do ONE now: run the next search as the " +
+                                        "ONLY thing in your reply — <search>your query</search> — and nothing else; OR, if you have enough, write " +
+                                        "the FULL answer now with the actual information you found (not a summary of your steps), with headings and " +
+                                        "a Sources list, and end by telling me what I can do next. Never reply with just a short status line again.",
                             )
                             liveText = ""
                             continue
