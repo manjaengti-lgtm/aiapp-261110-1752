@@ -10,6 +10,7 @@ class AppContainer(context: Context) {
     val location: LocationHelper by lazy { LocationHelper(app) }
     val authorities: AuthorityFinder by lazy { AuthorityFinder(app) }
     val sender: SendHelper by lazy { SendHelper(app) }
+    val autoSender: AutoSender by lazy { AutoSender(app, sender) }
     val detector: ActivityDetector by lazy { ActivityDetector(app) }
     val notifications: NotificationHelper by lazy { NotificationHelper(app) }
     val media: MediaStore by lazy { MediaStore(app) }

@@ -98,8 +98,8 @@ fun ReportsScreen(vm: ReportViewModel, onBack: () -> Unit, onOpenReport: (String
                                     scope.launch {
                                         val ok = vm.resend(report)
                                         snackbar.showSnackbar(
-                                            if (ok) "Resend prepared for ${report.authorities.size} office(s)."
-                                            else "No mail or SMS app could be opened."
+                                            vm.sendResult.value ?: if (ok) "Sent." else "Not sent."
+                                            
                                         )
                                     }
                                 }) { Text("Resend") }

@@ -117,6 +117,8 @@ fun SettingsScreen(vm: ReportViewModel, onBack: () -> Unit) {
                 }
             }
 
+            com.arin.civicreport.ui.components.MailAccountCard(vm)
+
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp)) {
                     Text("Default way to send", style = MaterialTheme.typography.titleMedium)
@@ -178,7 +180,7 @@ fun SettingsScreen(vm: ReportViewModel, onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    "Complaints are saved inside this phone. Nothing is uploaded until you press send.",
+                    "Complaints are saved inside this phone. They leave only when you press Send now: email from your own account, SMS from your SIM. The mail password is kept encrypted on this phone.",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(14.dp)
                 )

@@ -257,43 +257,71 @@ class ReportViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    fun sendCurrent(report: Report, subject: String, body: String, channel: SendChannel): Boolean {
-        val wantsEmail = channel != SendChannel.SMS
-        var ok = false
-        var message: String
-        if (wantsEmail) {
-            ok = sendHelper.sendEmail(report, subject, body)
-            message = when (sendHelper.lastEmailResult) {
-                com.arin.civicreport.data.SendHelper.EmailResult.OPENED ->
-                    "Email app opened with ${sendHelper.emailsOf(report.authorities).size} address(es) and your files. Press Send there."
-                com.arin.civicreport.data.SendHelper.EmailResult.OPENED_WITHOUT_FILES ->
-                    "Your email app would not take the files, so only the text was added. Use \"Share via any app\" for the files."
-                com.arin.civicreport.data.SendHelper.EmailResult.NO_RECIPIENTS ->
-                    "None of the selected offices has an email address. Use SMS, phone, or their portal."
-                com.arin.civicreport.data.SendHelper.EmailResult.NO_EMAIL_APP ->
-                    "No email app is set up on this phone. Install or sign in to Gmail, then try again."
-            }
-            // With email + SMS, SMS is sent with its own button so the two apps don't cover each other.
-            if (!ok && channel == SendChannel.BOTH && sendHelper.sendSms(report, body)) {
-                ok = true
-                message = "$message SMS app opened instead."
-            }
-        } else {
-            ok = sendHelper.sendSms(report, body)
-            message = if (ok) "SMS app opened. Press Send there."
-            else "None of the selected offices has a mobile number for SMS."
-        }
-        if (ok && settings.value.notificationsEnabled) {
-            notifications.notifyReportSent(report.title, report.authorities.size)
-        }
-        _sendResult.value = message
-        return ok
+    val autoSender = container.autoSender
+    private val _progress = MutableStateFlow<String?>(null)
+    val progress: StateFlow<String?> = _progress.asStateFlow()
+    private val _mailAccount = MutableStateFlow(autoSender.accounts.load())
+    val mailAccount: StateFlow<com.arin.civicreport.data.MailAccount> = _mailAccount.asStateFlow()
+
+    fun saveMailAccount(a: com.arin.civicreport.data.MailAccount) {
+        autoSender.accounts.save(a)
+        _mailAccount.value = autoSender.accounts.load()
     }
 
-    fun sendSmsOnly(report: Report, body: String): Boolean {
-        val ok = sendHelper.sendSms(report, body)
-        _sendResult.value = if (ok) "SMS app opened. Press Send there."
-        else "None of the selected offices has a mobile number for SMS."
+    fun clearMailAccount() {
+        autoSender.accounts.clear()
+        _mailAccount.value = autoSender.accounts.load()
+    }
+
+    suspend fun testMailAccount(a: com.arin.civicreport.data.MailAccount): String? =
+        autoSender.test(a.copy(password = a.password.replace(" ", "")))
+
+    /**
+     * Sends the complaint by itself: email from the person's own mailbox and SMS from the SIM.
+     * Nothing else opens. Returns true if at least one office was reached.
+     */
+    suspend fun sendCurrent(report: Report, subject: String, body: String, channel: SendChannel): Boolean {
+        val wantsEmail = channel != SendChannel.SMS
+        val wantsSms = channel != SendChannel.EMAIL
+        val lines = mutableListOf<String>()
+        var mail = com.arin.civicreport.data.AutoSender.Outcome()
+        if (wantsEmail) {
+            mail = autoSender.sendEmail(report, subject, body, settings.value.senderName) { _progress.value = it }
+            if (mail.emailedTo.isNotEmpty()) {
+                lines += "Email sent to ${mail.emailedTo.size} office(s)" +
+                    (if (mail.emailParts > 1) " in ${mail.emailParts} parts" else "") + "."
+                if (mail.skippedFiles.isNotEmpty()) lines += "Too large to email: ${mail.skippedFiles.joinToString()}."
+            } else mail.error?.let { lines += "Email not sent: $it" }
+        }
+        var sms = com.arin.civicreport.data.AutoSender.Outcome()
+        if (wantsSms) {
+            val text = autoSender.smsText(report, mail.emailedTo.isNotEmpty(), _mailAccount.value.email)
+            sms = autoSender.sendSms(report, text) { _progress.value = it }
+            when {
+                sms.smsSentTo.isNotEmpty() -> lines += "SMS sent to ${sms.smsSentTo.size} number(s)." +
+                    if (sms.smsFailed.isNotEmpty()) " ${sms.smsFailed.size} failed." else ""
+                sms.error != null -> lines += "SMS not sent: ${sms.error}"
+                sms.smsFailed.isNotEmpty() -> lines += "SMS failed. Check balance and signal."
+                !wantsEmail -> lines += "None of the selected offices has a mobile number for SMS."
+            }
+        }
+        _progress.value = null
+        val ok = mail.anySent || sms.anySent
+        val channels = buildList {
+            if (mail.anySent) add("EMAIL")
+            if (sms.anySent) add("SMS")
+        }
+        if (ok) {
+            container.reports.upsert(
+                report.copy(
+                    status = ReportStatus.SENT,
+                    lastSentAt = System.currentTimeMillis(),
+                    sentChannels = channels
+                )
+            )
+            if (settings.value.notificationsEnabled) notifications.notifyReportSent(report.title, report.authorities.size)
+        }
+        _sendResult.value = lines.joinToString(" ").ifBlank { "Nothing was sent." }
         return ok
     }
 
@@ -302,7 +330,7 @@ class ReportViewModel(app: Application) : AndroidViewModel(app) {
 
     suspend fun persist(report: Report) = container.reports.upsert(report)
 
-    fun resend(report: Report): Boolean {
+    suspend fun resend(report: Report): Boolean {
         val channel = when {
             report.sendEmail && report.sendSms -> SendChannel.BOTH
             report.sendSms -> SendChannel.SMS
@@ -310,15 +338,7 @@ class ReportViewModel(app: Application) : AndroidViewModel(app) {
         }
         val subject = "Complaint: ${report.title}"
         val body = sendHelper.buildBody(report)
-        val ok = sendCurrent(report, subject, body, channel)
-        if (ok) {
-            viewModelScope.launch {
-                container.reports.upsert(
-                    report.copy(status = ReportStatus.SENT, lastSentAt = System.currentTimeMillis())
-                )
-            }
-        }
-        return ok
+        return sendCurrent(report, subject, body, channel)
     }
 
     fun deleteReport(report: Report) {

@@ -56,6 +56,12 @@ import com.arin.civicreport.ui.components.PhotoThumb
 import com.arin.civicreport.ui.components.openMediaFile
 import com.arin.civicreport.viewmodel.ReportViewModel
 import kotlinx.coroutines.delay
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import com.arin.civicreport.ui.components.MailAccountCard
 import kotlinx.coroutines.launch
 
 @Composable
@@ -97,6 +103,8 @@ fun ComposeScreen(vm: ReportViewModel, onBack: () -> Unit, onFinished: () -> Uni
     var sendEmail by remember { mutableStateOf(settings.defaultChannel != SendChannel.SMS) }
     var sendSms by remember { mutableStateOf(settings.defaultChannel != SendChannel.EMAIL) }
     var sending by remember { mutableStateOf(false) }
+    val mailAccount by vm.mailAccount.collectAsStateWithLifecycle()
+    val progress by vm.progress.collectAsStateWithLifecycle()
 
     fun currentChannel(): SendChannel = when {
         sendEmail && sendSms -> SendChannel.BOTH
@@ -301,22 +309,34 @@ fun ComposeScreen(vm: ReportViewModel, onBack: () -> Unit, onFinished: () -> Uni
                 }
             }
 
+            if (sendEmail) MailAccountCard(vm)
+
+            val emailCount = vm.sendHelper.emailsOf(report.authorities).size
+            val smsCount = vm.sendHelper.smsNumbersOf(report.authorities).size
+            val accountReady = mailAccount.isSet
+
+            fun doSend() {
+                sending = true
+                val channel = currentChannel()
+                scope.launch {
+                    val ok = vm.sendCurrent(snapshot(ReportStatus.DRAFT), subject, body, channel)
+                    if (!ok) vm.persist(snapshot(ReportStatus.DRAFT))
+                    sending = false
+                    snackbar.showSnackbar(
+                        (vm.sendResult.value ?: "") + if (ok) "" else " Saved as a draft."
+                    )
+                    if (ok) onFinished()
+                }
+            }
+            val smsPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { doSend() }
+
             Button(
                 onClick = {
-                    sending = true
-                    val channel = currentChannel()
-                    scope.launch {
-                        val ok = vm.sendCurrent(report, subject, body, channel)
-                        vm.persist(snapshot(if (ok) ReportStatus.SENT else ReportStatus.DRAFT))
-                        delay(150)
-                        sending = false
-                        snackbar.showSnackbar(
-                            (vm.sendResult.value ?: "") +
-                                if (ok) "" else " The complaint was saved as a draft."
-                        )
-                    }
+                    val needSmsPermission = sendSms && smsCount > 0 &&
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED
+                    if (needSmsPermission) smsPermission.launch(Manifest.permission.SEND_SMS) else doSend()
                 },
-                enabled = canSend,
+                enabled = canSend && (!sendEmail || accountReady || sendSms),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 if (sending) {
@@ -325,32 +345,22 @@ fun ComposeScreen(vm: ReportViewModel, onBack: () -> Unit, onFinished: () -> Uni
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                     Spacer(Modifier.size(8.dp))
-                    Text("Preparing…")
+                    Text(progress ?: "Sending…")
                 } else {
                     Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null)
                     Spacer(Modifier.size(8.dp))
-                    Text(if (sendEmail) "Send by email" else "Send by SMS")
-                }
-            }
-
-            val smsCount = vm.sendHelper.smsNumbersOf(report.authorities).size
-            if (sendEmail && sendSms) {
-                OutlinedButton(
-                    onClick = {
-                        val ok = vm.sendSmsOnly(report, body)
-                        scope.launch {
-                            if (ok) vm.persist(snapshot(ReportStatus.SENT))
-                            snackbar.showSnackbar(vm.sendResult.value ?: "")
-                        }
-                    },
-                    enabled = !sending && smsCount > 0,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(if (smsCount > 0) "Also send SMS to $smsCount mobile number(s)" else "No mobile numbers for SMS")
+                    Text("Send now")
                 }
             }
             Text(
-                "Email reaches ${vm.sendHelper.emailsOf(report.authorities).size} office(s). After sending, call or use the portal for offices without email (see the office list).",
+                buildString {
+                    if (sendEmail) append(
+                        if (accountReady) "Email goes straight to $emailCount office(s) with all files. "
+                        else "Set up your email account above to email $emailCount office(s). "
+                    )
+                    if (sendSms) append("SMS goes from your SIM to $smsCount mobile number(s) (normal SMS charges). ")
+                    append("Offices without email or mobile: call them or use their portal from the office list.")
+                },
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -372,7 +382,7 @@ fun ComposeScreen(vm: ReportViewModel, onBack: () -> Unit, onFinished: () -> Uni
             ) {
                 Icon(Icons.Filled.Share, contentDescription = null)
                 Spacer(Modifier.size(8.dp))
-                Text("Share via any app (for large files)")
+                Text("Or share through another app")
             }
 
             TextButton(

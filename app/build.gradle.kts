@@ -12,8 +12,8 @@
                 applicationId = "com.arin.civicreport"
                 minSdk = 26
                 targetSdk = 37
-                versionCode = 1
-                versionName = "1.0"
+                versionCode = 2
+                versionName = "1.1"
             }
             signingConfigs {
                 // Created once by the workflow and kept in the repo, so every build installs over the last one.
@@ -32,6 +32,11 @@
                 targetCompatibility = JavaVersion.VERSION_17
             }
             buildFeatures { compose = true }
+            packaging {
+                resources {
+                    excludes += setOf("META-INF/LICENSE.md", "META-INF/NOTICE.md", "META-INF/LICENSE", "META-INF/NOTICE", "META-INF/*.kotlin_module")
+                }
+            }
         }
 
         kotlin {
@@ -64,4 +69,6 @@ implementation("androidx.camera:camera-lifecycle:1.7.0-rc02")
 implementation("androidx.camera:camera-video:1.7.0-rc02")
 implementation("androidx.camera:camera-view:1.7.0-rc02")
 implementation("com.google.android.gms:play-services-location:21.4.0")
+implementation("com.sun.mail:android-mail:1.6.7")
+implementation("com.sun.mail:android-activation:1.6.7")
         }
