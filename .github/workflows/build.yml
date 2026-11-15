@@ -53,10 +53,11 @@ jobs:
             echo "::error::${l//%/%25}"
           done
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk app-${{ github.run_number }}.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk DuarbagoriReports-${{ github.run_number }}.apk
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: Build ${{ github.run_number }}
-          files: app-*.apk
-          make_latest: true
+          tag_name: duarbagori-${{ github.run_number }}
+          name: Duarbagori Reports ${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          files: DuarbagoriReports-*.apk
+          make_latest: false
