@@ -294,6 +294,8 @@ class BuildAgent(
             val repoName = "$slug-" + SimpleDateFormat("yyMMdd-HHmm", Locale.US).format(Date())
             repo = createRepoOrLocal(repoName, "Built by Arin: ${req.description}")
             ProjectTemplate.files(appName, packageName, deps.toList()).forEach { (p, c) -> pendingFiles[p] = c.toByteArray() }
+            // Sign every built app with the one shared key, so a rebuild updates over the installed app cleanly.
+            pendingFiles["app/signing.keystore"] = android.util.Base64.decode(ProjectTemplate.SHARED_KEYSTORE_B64, android.util.Base64.DEFAULT)
             if (req.codespace && !localOnly) {
                 // Make an opened codespace ready to build Android, and open one now (if the sign-in allows it).
                 pendingFiles[".devcontainer/devcontainer.json"] = ProjectTemplate.devcontainer.toByteArray()
