@@ -112,43 +112,56 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var memoryOn by mutableStateOf(settings.memoryOn)
         private set
 
-    /** Save credits: trim old conversation and large tool outputs sent to the model (keeps recent context). */
+    /**
+     * Save credits WITHOUT losing memory. The model still receives the whole conversation every turn.
+     * Savings come from two lossless tricks instead of trimming:
+     *  1. Prompt caching (see Llm.stream cache flag): the repeated conversation prefix is billed at a
+     *     fraction (~10%) on every provider that caches it (Claude cache_control; DeepSeek/OpenAI/Gemini
+     *     cache automatically as long as the prefix stays stable — which it does, since we never trim).
+     *  2. Duplicate-block collapsing (dedupeTurns): when the exact same large block (a re-pasted file,
+     *     a re-fetched page) appears in several turns, only the LAST full copy is sent; earlier identical
+     *     copies become a one-line marker. No unique information is dropped, so the model still has
+     *     every bit it needs to build the project.
+     */
     var saveCredits by mutableStateOf(settings.saveCredits)
         private set
 
     fun toggleSaveCredits(on: Boolean) {
         saveCredits = on
         settings.saveCredits = on
-        notice = if (on) "Save credits is on: Arin sends the model less of the old chat, so replies cost fewer tokens."
-            else "Save credits is off: the whole chat is sent to the model (more tokens)."
+        notice = if (on) "Save credits is on: the whole chat is still sent, but the repeated part is cached and re-pasted files are sent once, so it costs far fewer tokens."
+            else "Save credits is off: caching and duplicate-collapsing are disabled."
     }
 
     /**
-     * Keeps the request small: the first user turn (for context) plus the most recent turns that fit [maxChars],
-     * and any turn carrying an image/PDF. Trimming old text, not the model, is what saves credits.
+     * Lossless: if the same large text block (>= 600 chars) shows up in more than one turn, keep it only in
+     * its LAST occurrence and replace the earlier identical copies with a short marker. The model keeps the
+     * full latest copy plus the note that an identical one appeared earlier, so no real context is lost.
      */
-    private fun budgetTurns(turns: List<Turn>, maxChars: Int): List<Turn> {
-        if (turns.size <= 3) return turns
-        val keep = LinkedHashSet<Int>()
-        turns.indices.firstOrNull { turns[it].fromUser }?.let { keep += it }      // anchor: first question
-        turns.indices.filter { turns[it].hasMedia }.forEach { keep += it }        // never drop images/PDFs
-        var used = turns.filter { it.hasMedia }.sumOf { it.text.length + 4_000 }  // images count as heavy
-        for (i in turns.indices.reversed()) {                                     // then recent turns, newest first
-            if (i in keep) continue
-            val size = turns[i].text.length
-            if (used + size > maxChars && keep.size > 2) break
-            keep += i; used += size
+    private fun dedupeTurns(turns: List<Turn>): List<Turn> {
+        if (turns.size <= 2) return turns
+        val minLen = 600
+        // Last turn index in which each big block appears.
+        val lastSeen = HashMap<String, Int>()
+        turns.forEachIndexed { i, t ->
+            t.text.split("\n\n").forEach { block ->
+                val b = block.trim()
+                if (b.length >= minLen) lastSeen[b] = i
+            }
         }
-        val kept = turns.filterIndexed { i, _ -> i in keep }
-        // Merge any two same-role turns the trimming left adjacent, so providers that need alternating roles (Claude) stay valid.
-        val merged = mutableListOf<Turn>()
-        for (t in kept) {
-            val last = merged.lastOrNull()
-            if (last != null && last.fromUser == t.fromUser && !last.hasMedia && !t.hasMedia) {
-                merged[merged.lastIndex] = last.copy(text = last.text + "\n\n" + t.text)
-            } else merged += t
+        if (lastSeen.isEmpty()) return turns
+        return turns.mapIndexed { i, t ->
+            if (!t.text.contains("\n\n")) return@mapIndexed t
+            var changed = false
+            val rebuilt = t.text.split("\n\n").joinToString("\n\n") { block ->
+                val b = block.trim()
+                if (b.length >= minLen && lastSeen[b] != null && lastSeen[b] != i) {
+                    changed = true
+                    "[identical block shown later in this chat — omitted here to save tokens]"
+                } else block
+            }
+            if (changed) t.copy(text = rebuilt) else t
         }
-        return merged
     }
 
     /** Custom instructions (Settings): about the person, and how to answer. */
@@ -1151,8 +1164,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                 else turns + Turn(false, text.toString()) +
                                     Turn(true, "Your reply above was cut off mid-way. Continue it from exactly where it stopped. Do not repeat anything already written and do not start over — just carry straight on.")
                             try {
-                                val sent = budgetTurns(streamTurns, if (saveCredits) 14_000 else 120_000)
-                                Llm.stream(p, key, m, system, sent).collect { d ->
+                                val sent = if (saveCredits) dedupeTurns(streamTurns) else streamTurns
+                                Llm.stream(p, key, m, system, sent, cache = saveCredits).collect { d ->
                                     if (steerPending) throw SteerInterrupt()
                                     when (d) {
                                         is Delta.Text -> {
@@ -1308,7 +1321,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                 }
                                 page != null -> {
                                     status = "Reading " + page.removePrefix("https://").removePrefix("http://").take(60)
-                                    "Content of $page:\n\n" + runCatching { com.arin.builder.WebTools.fetch(page) }.getOrElse { "Couldn't open it: ${it.message}" }.take(if (saveCredits) 8_000 else 24_000)
+                                    "Content of $page:\n\n" + runCatching { com.arin.builder.WebTools.fetch(page) }.getOrElse { "Couldn't open it: ${it.message}" }.take(24_000)
                                 }
                                 else -> {
                                     val (name, url) = file!!
@@ -1416,7 +1429,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     hits.take(5).forEach { h -> if (sources.none { it.url == h.url }) sources += Source(h.title, h.url) }
                     status = null
                     turns += Turn(false, "<search>$q</search>")
-                    val trimmed = if (saveCredits) results.take(6_000) else results
+                    val trimmed = results
                     turns += Turn(true, trimmed + "\n\nNow answer my earlier message using these results where they help.")
                 }
                 if (Prompt.clean(answer).isBlank() && ran.isEmpty()) failure = "The model sent an empty reply. Tap Retry, or pick another model."

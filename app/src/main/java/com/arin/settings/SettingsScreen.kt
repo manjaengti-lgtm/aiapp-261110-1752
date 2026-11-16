@@ -127,8 +127,8 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
             Section("Credits") {
                 Toggle(
                     "Save credits",
-                    "Send the model less of the old conversation and smaller search and tool results, keeping recent context. " +
-                        "Replies cost far fewer tokens on long chats, with no change to the model.",
+                    "Keeps the WHOLE chat in the model's memory, but bills the repeated part at a fraction by caching it, " +
+                        "and sends a re-pasted file or page only once. Far fewer tokens on long builds, with no loss of context.",
                     vm.saveCredits,
                     vm::toggleSaveCredits,
                 )

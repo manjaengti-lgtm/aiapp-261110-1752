@@ -27,7 +27,7 @@ object Llm {
      * Streams a reply. [maxTokens] asks for a longer answer (Build mode writes whole apps); null leaves the
      * service's default, which for some (DeepSeek-style APIs) is only about 4,000 tokens.
      */
-    fun stream(provider: Provider, key: String, model: String, system: String, turns: List<Turn>, maxTokens: Int? = null): Flow<Delta> {
+    fun stream(provider: Provider, key: String, model: String, system: String, turns: List<Turn>, maxTokens: Int? = null, cache: Boolean = false): Flow<Delta> {
         if (provider.needsKey && key.isBlank()) {
             throw LlmException("Add your ${provider.label} API key in Settings, or switch to Free models.")
         }
@@ -37,10 +37,10 @@ object Llm {
             Provider.Gemini -> openAiStream("$GEMINI_BASE/chat/completions", bearer(key), model, system, turns, maxTokens = maxTokens)
             // OpenAI's newer models take max_completion_tokens; leave ChatGPT on its default.
             Provider.ChatGPT -> openAiStream("$OPENAI_BASE/chat/completions", bearer(key), model, system, turns)
-            Provider.Claude -> anthropicStream("$ANTHROPIC_BASE/messages", anthropicHeaders(key), key, model, system, turns, maxTokens)
+            Provider.Claude -> anthropicStream("$ANTHROPIC_BASE/messages", anthropicHeaders(key), key, model, system, turns, maxTokens, cache)
             Provider.Custom -> when (CustomApi.format) {
                 ApiFormat.OpenAI -> openAiStream(CustomApi.chatUrl(), bearer(key), model, system, turns, maxTokens = maxTokens)
-                ApiFormat.Anthropic -> anthropicStream(CustomApi.chatUrl(), customAnthropicHeaders(key), key, model, system, turns, maxTokens)
+                ApiFormat.Anthropic -> anthropicStream(CustomApi.chatUrl(), customAnthropicHeaders(key), key, model, system, turns, maxTokens, cache)
             }
         }
     }
@@ -192,17 +192,28 @@ object Llm {
         }
     }
 
-    private fun anthropicStream(url: String, headers: Map<String, String>, key: String, model: String, system: String, turns: List<Turn>, maxTokens: Int? = null): Flow<Delta> {
+    private fun anthropicStream(url: String, headers: Map<String, String>, key: String, model: String, system: String, turns: List<Turn>, maxTokens: Int? = null, cache: Boolean = false): Flow<Delta> {
         val body = buildJsonObject {
             put("model", model)
             put("max_tokens", maxTokens ?: 8192)
             put("stream", true)
-            put("system", system)
+            // Prompt caching: cache the big stable prefix (system + conversation) so each turn re-reads it
+            // at a fraction of the cost. Full context is still sent — nothing is dropped.
+            if (cache) {
+                putJsonArray("system") {
+                    addJsonObject {
+                        put("type", "text"); put("text", system)
+                        putJsonObject("cache_control") { put("type", "ephemeral") }
+                    }
+                }
+            } else put("system", system)
+            val lastIdx = turns.lastIndex
             putJsonArray("messages") {
-                turns.forEach { t ->
+                turns.forEachIndexed { idx, t ->
+                    val markCache = cache && idx == lastIdx   // breakpoint at the end of the prefix
                     addJsonObject {
                         put("role", if (t.fromUser) "user" else "assistant")
-                        if (!t.hasMedia) {
+                        if (!t.hasMedia && !markCache) {
                             put("content", t.text)
                         } else {
                             // Anthropic content blocks: documents and images first, then the question.
@@ -228,7 +239,10 @@ object Llm {
                                         }
                                     }
                                 }
-                                addJsonObject { put("type", "text"); put("text", t.text) }
+                                addJsonObject {
+                                    put("type", "text"); put("text", t.text)
+                                    if (markCache) putJsonObject("cache_control") { put("type", "ephemeral") }
+                                }
                             }
                         }
                     }
