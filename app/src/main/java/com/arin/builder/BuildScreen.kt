@@ -92,6 +92,28 @@ private fun resumeBuild(chat: ChatViewModel, vm: BuildViewModel, text: String = 
     )
 }
 
+/** Runs the last request again from the beginning (round 0, nothing carried over from the stopped run). */
+private fun restartBuild(chat: ChatViewModel, vm: BuildViewModel) {
+    val project = vm.project ?: return
+    val last = BuildRunner.timeline.filterIsInstance<TimelineItem.User>().map { it.text.trim() }
+        .lastOrNull { it.isNotBlank() && !resumeWords.containsMatchIn(it) }
+        ?: project.requirements.ifBlank { project.description }
+    vm.start(
+        BuildRequest(
+            description = last,
+            appName = project.appName,
+            provider = chat.provider,
+            model = chat.model,
+            apiKey = chat.key(chat.provider),
+            effort = chat.effort,
+            githubToken = chat.githubToken(),
+            allowOtherSites = true,
+            project = project.copy(round = 0, pendingPaths = emptyList()),
+            resume = false,
+        ),
+    )
+}
+
 /** Build Mode, laid out like an IDE agent chat: your requests, live steps, files and results. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -405,6 +427,34 @@ private fun BuildComposer(chat: ChatViewModel, vm: BuildViewModel, onOpenSetting
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+            if (project != null && BuildRunner.timeline.any { it is TimelineItem.User }) {
+                val lastResult = BuildRunner.timeline.lastOrNull { it is TimelineItem.Result } as? TimelineItem.Result
+                Text(
+                    when {
+                        lastResult == null -> "The last build didn't finish."
+                        lastResult.success -> "The last build succeeded."
+                        else -> "The last build failed."
+                    } + " Resume it, or restart the last request from the beginning:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            problem = ready()
+                            if (problem == null) resumeBuild(chat, vm, "Resume")
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Resume last build") }
+                    OutlinedButton(
+                        onClick = {
+                            problem = ready()
+                            if (problem == null) restartBuild(chat, vm)
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Restart build") }
+                }
             }
             if (attaching) UploadBar("Attaching…", attachPct)
             if (attached.isNotEmpty() && !attaching) {
