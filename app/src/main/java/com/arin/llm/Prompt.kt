@@ -355,8 +355,7 @@ object Prompt {
         append("You CANNOT do any of this from the terminal: the person's GitHub token lives inside the app, NOT in the terminal, so ")
         append("git push / gh / git clone / gradle / keytool will ALWAYS fail. NEVER run terminal or git commands to build, push or ")
         append("publish — don't look for a token, don't check git config, don't try to clone or push. The terminal and REA are only ")
-        append("for inspecting and reverse-engineering apps. When asked to build or push to GitHub, go straight to the <build> tag.
-")
+        append("for inspecting and reverse-engineering apps. When asked to build or push to GitHub, go straight to the <build> tag.\n")
         append("RULE 2, build everything: when the person says build, don't ask more questions. End your reply with ")
         append("<build name=\"App name\">the COMPLETE specification</build>. Go back through the WHOLE conversation and write down ")
         append("every single thing that was asked for or agreed, as a numbered list: every screen, feature, button, option, text, ")
