@@ -1790,7 +1790,22 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     // ---- Custom API ----
 
     /** Custom APIs saved by the person; one tap switches to any of them (each keeps its own key and model). */
-    val savedApis = androidx.compose.runtime.mutableStateListOf<com.arin.data.SavedApi>().apply { addAll(settings.savedApis) }
+    val savedApis = androidx.compose.runtime.mutableStateListOf<com.arin.data.SavedApi>().apply {
+        addAll(settings.savedApis)
+        // An API set up in an older version (base URL + key, never added to the list): put it at the top so it isn't lost.
+        val base = settings.customBaseUrl
+        val oldKey = settings.keyFor(base)
+        if (oldKey.isNotBlank() && none { it.baseUrl == base }) {
+            val api = com.arin.data.SavedApi(
+                com.arin.llm.CustomApi.label(base), base, settings.customFormat.name,
+                settings.customModel.ifBlank { settings.model(Provider.Custom).orEmpty() }, java.util.UUID.randomUUID().toString(),
+            )
+            settings.setApiKey(api, oldKey)
+            add(0, api)
+            settings.savedApis = toList()
+            if (settings.activeApiId.isBlank()) settings.activeApiId = api.slotId
+        }
+    }
 
     /** Saves the API in use now under [name] as a NEW entry (or renames the one in use if it has that name). */
     fun saveCurrentApi(name: String) {
@@ -1800,7 +1815,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             else com.arin.data.SavedApi(n, customBaseUrl, customFormat.name, customModel, java.util.UUID.randomUUID().toString())
         settings.setApiKey(api, settings.key(Provider.Custom))
         val i = savedApis.indexOfFirst { it.slotId == api.slotId }
-        if (i >= 0) savedApis[i] = api else savedApis += api
+        if (i >= 0) savedApis[i] = api else savedApis.add(0, api)
         settings.savedApis = savedApis.toList()
         settings.activeApiId = api.slotId
         notice = "Saved \"$n\""
@@ -1847,7 +1862,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         settings.setApiKey(api, key.ifBlank { keep })
         val list = savedApis.toMutableList()
         val i = if (old != null) list.indexOfFirst { it.slotId == old.slotId } else -1
-        if (i >= 0) list[i] = api else list += api
+        if (i >= 0) list[i] = api else list.add(0, api)   // newest at the top
         savedApis.clear()
         savedApis.addAll(list)
         settings.savedApis = list
@@ -1921,7 +1936,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     settings.model(Provider.Custom).orEmpty(), java.util.UUID.randomUUID().toString(),
                 )
                 settings.setApiKey(api, key)
-                savedApis += api
+                savedApis.add(0, api)
                 settings.savedApis = savedApis.toList()
                 settings.activeApiId = api.slotId
                 activeApiTick++
