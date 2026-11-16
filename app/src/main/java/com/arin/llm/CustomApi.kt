@@ -27,11 +27,19 @@ object CustomApi {
         Preset("Token Harbor", "https://tokenharbor.ai/v1", ApiFormat.OpenAI, "tokenharbor.ai/dashboard/api-keys"),
         Preset("OpenRouter", "https://openrouter.ai/api/v1", ApiFormat.OpenAI, "openrouter.ai/keys"),
         // Lists free DeepSeek V4.1 Flash models, including an abliterated (uncensored) build with no safety filtering.
+        // DeepSeek V4.1 Flash Abliterated (uncensored) on OrcaRouter: model id orca/orcacyber-flash-1.0.
+        Preset(
+            "DeepSeek V4.1 Flash uncensored", "https://api.orcarouter.ai/v1", ApiFormat.OpenAI, "orcarouter.ai",
+            models = listOf(
+                "DeepSeek V4.1 Flash uncensored" to "orca/orcacyber-flash-1.0",
+                "DeepSeek V4.1 Flash (free)" to "deepseek/deepseek-v4.1-flash-free",
+            ),
+        ),
         Preset(
             "OrcaRouter", "https://api.orcarouter.ai/v1", ApiFormat.OpenAI, "orcarouter.ai",
             models = listOf(
                 "DeepSeek V4.1 Flash (free)" to "deepseek/deepseek-v4.1-flash-free",
-                "DeepSeek V4.1 Flash uncensored (free)" to "orca/orcacyber-flash-1.0-free",
+                "DeepSeek V4.1 Flash uncensored" to "orca/orcacyber-flash-1.0",
             ),
         ),
         Preset("DeepSeek", "https://api.deepseek.com/v1", ApiFormat.OpenAI, "platform.deepseek.com/api_keys"),

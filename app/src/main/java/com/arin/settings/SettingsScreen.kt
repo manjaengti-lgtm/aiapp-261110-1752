@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -185,6 +187,11 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
             }
 
             // Extra features, folded away so the screen stays simple. Tap a row to open it.
+            FoldSection(
+                "Offline models (no internet)",
+                vm.offlineStatus.ifBlank { "${vm.offlineDownloaded().size} on this phone · run uncensored models with no internet" },
+                startOpen = vm.offlineBusy,
+            ) { OfflineModelSettings(vm) }
             FoldSection("Custom API", "${vm.savedApis.size} saved" + (vm.currentSavedApi()?.let { " · using ${it.name}" } ?: "") + " · tap to add more services") {
                 CustomApiSettings(vm)
             }
@@ -748,6 +755,77 @@ private fun CustomInstructionsSettings(vm: ChatViewModel) {
         enabled = about.trim() != vm.aboutYou || how.trim() != vm.howToAnswer,
         onClick = { vm.saveCustomInstructions(about, how) },
     ) { Text("Save") }
+}
+
+/** Offline models: download an uncensored GGUF model and run it on the phone with llama.cpp (in Linux). */
+@Composable
+private fun OfflineModelSettings(vm: ChatViewModel) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val linux = com.arin.terminal.Linux.installed(context)
+    var repo by remember { mutableStateOf("") }
+    Text(
+        "These models run entirely on this phone (no internet, no API key, no cost) using llama.cpp inside Arin's Linux. " +
+            "They are abliterated: their refusal behaviour was removed. Phone models are smaller than cloud ones, so answers are " +
+            "slower and less capable than DeepSeek or Claude. First reply after loading takes a little longer.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    if (!linux) {
+        Text("Install Linux first (the Linux section below), then come back here.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+    }
+    if (vm.offlineStatus.isNotBlank()) {
+        Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (vm.offlineBusy) androidx.compose.material3.CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                if (vm.offlineBusy) Spacer(Modifier.width(10.dp))
+                Text(vm.offlineStatus, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+    val have = vm.offlineDownloaded()
+    if (have.isNotEmpty()) {
+        Text("On this phone", style = MaterialTheme.typography.titleSmall)
+        have.forEach { f ->
+            val api = vm.savedApis.firstOrNull { it.id == "local:${f.name}" }
+            val inUse = api != null && vm.currentSavedApi()?.slotId == api.slotId
+            Surface(
+                color = if (inUse) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(f.nameWithoutExtension + if (inUse) "  · in use" else "", style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+                        Text("%.2f GB".format(f.length() / 1073741824.0), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    TextButton(enabled = !vm.offlineBusy, onClick = {
+                        if (api != null) vm.useSavedApi(api) else vm.useOfflineFile(f)
+                    }) { Text("Use") }
+                    TextButton(enabled = !vm.offlineBusy, onClick = { vm.deleteOfflineModel(f) }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                }
+            }
+        }
+        OutlinedButton(onClick = { vm.stopOfflineModel() }) { Text("Stop offline model (free memory)") }
+    }
+    Text("Download a model", style = MaterialTheme.typography.titleSmall)
+    com.arin.llm.LocalModel.presets.forEach { p ->
+        Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(p.name, style = MaterialTheme.typography.bodyLarge)
+                Text("${p.size} download · needs ${p.ram}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Text(p.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                androidx.compose.material3.Button(enabled = linux && !vm.offlineBusy, onClick = { vm.setUpOfflineModel(p.repo, p.name) }) {
+                    Text("Download and use")
+                }
+            }
+        }
+    }
+    OutlinedTextField(
+        value = repo, onValueChange = { repo = it.trim() },
+        label = { Text("Any Hugging Face GGUF repo or .gguf link") },
+        placeholder = { Text("e.g. bartowski/mlabonne_Qwen3-4B-abliterated-GGUF") },
+        singleLine = true, modifier = Modifier.fillMaxWidth(),
+    )
+    TextButton(enabled = linux && !vm.offlineBusy && repo.isNotBlank(), onClick = { vm.setUpOfflineModel(repo, "") }) { Text("Download and use this model") }
 }
 
 /** Custom APIs: the full list (add as many as you like), plus one-tap services that open a new API form. */

@@ -1126,7 +1126,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     status = null
                     if (problems.isNotEmpty()) notice = problems.joinToString("\n")
                 }
-                val system = Prompt.system(
+                val offline = p == Provider.Custom && com.arin.llm.LocalModel.isLocal(customBaseUrl)
+                if (offline && !com.arin.llm.LocalModel.isUp()) {
+                    val file = offlineModelFor(currentSavedApi()) ?: com.arin.llm.LocalModel.lastModel(app)
+                    val problem = if (file == null) "No offline model is downloaded yet. Open Settings → Offline models."
+                        else com.arin.llm.LocalModel.start(app, file) { status = it }
+                    status = null
+                    if (problem != null) throw com.arin.llm.LlmException(problem)
+                }
+                val system = if (offline) Prompt.localSystem(memoryList, aboutYou, howToAnswer, replyStyle) else Prompt.system(
                     searchFlag, memoryFlag, memoryList, project, useTerminal, com.arin.mcp.Mcp.promptSection(activeNames),
                     terminalInfo = com.arin.terminal.Shell.describe(app),
                     pastChats = if (memoryFlag) withContext(Dispatchers.IO) { runCatching { store.recentTitles(chatId) }.getOrDefault("") } else "",
@@ -1876,6 +1884,92 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         chooseProvider(Provider.Custom)
         activeApiTick++
         notice = "Using ${api.name}" + if (key.isBlank()) " (no API key saved for it: tap Edit to add one)" else ""
+        offlineModelFor(api)?.let { file ->
+            val app = getApplication<Application>()
+            ArinApp.scope.launch {
+                if (com.arin.llm.LocalModel.lastModel(app)?.name == file.name && com.arin.llm.LocalModel.isUp()) return@launch
+                offlineStatus = "Loading ${file.nameWithoutExtension}…"
+                val problem = com.arin.llm.LocalModel.start(app, file) { offlineStatus = it }
+                offlineStatus = problem ?: "${file.nameWithoutExtension} is running on this phone."
+                notice = problem ?: "${api.name} is ready (offline)."
+            }
+        }
+    }
+
+    // ---- Offline models (llama.cpp in Linux) ----
+
+    /** The GGUF file behind a saved offline API ("local:<file name>" id), if it's on the phone. */
+    fun offlineModelFor(api: com.arin.data.SavedApi?): java.io.File? {
+        val name = api?.id?.takeIf { it.startsWith("local:") }?.removePrefix("local:") ?: return null
+        return java.io.File(com.arin.llm.LocalModel.modelsDir(getApplication()), name).takeIf { it.exists() }
+    }
+
+    var offlineBusy by mutableStateOf(false)
+        private set
+    var offlineStatus by mutableStateOf("")
+        private set
+
+    fun offlineDownloaded(): List<java.io.File> { activeApiTick; return com.arin.llm.LocalModel.downloaded(getApplication()) }
+
+    /**
+     * Gets an offline model ready end to end: Linux engine (once), the model download (resumes), starts it,
+     * and adds it to Your APIs so it can be picked from the chat like any other API.
+     */
+    fun setUpOfflineModel(repo: String, label: String) {
+        if (offlineBusy) return
+        val app = getApplication<Application>()
+        if (!com.arin.terminal.Linux.installed(app)) {
+            offlineStatus = "Install Linux first: Settings → Linux → Install Linux. Then come back here."
+            return
+        }
+        offlineBusy = true
+        ArinApp.scope.launch {
+            try {
+                if (!com.arin.llm.LocalModel.serverInstalled(app)) {
+                    val p = com.arin.llm.LocalModel.installServer(app) { offlineStatus = it }
+                    if (p != null) { offlineStatus = p; return@launch }
+                }
+                val file = com.arin.llm.LocalModel.downloadModel(app, repo) { offlineStatus = it }
+                val name = label.ifBlank { file.nameWithoutExtension }
+                val api = com.arin.data.SavedApi("📱 $name (offline)", com.arin.llm.LocalModel.BASE_URL,
+                    com.arin.llm.ApiFormat.OpenAI.name, com.arin.llm.LocalModel.MODEL_ID, "local:${file.name}")
+                settings.setApiKey(api, com.arin.llm.LocalModel.DUMMY_KEY)
+                val i = savedApis.indexOfFirst { it.slotId == api.slotId }
+                if (i >= 0) savedApis[i] = api else savedApis.add(0, api)
+                settings.savedApis = savedApis.toList()
+                kotlinx.coroutines.withContext(Dispatchers.Main) { useSavedApi(api) }
+            } catch (e: Exception) {
+                offlineStatus = "Stopped: ${e.message ?: e.javaClass.simpleName}. Tap the model again to resume the download."
+            } finally {
+                offlineBusy = false
+            }
+        }
+    }
+
+    /** Adds a model file that's already on the phone to Your APIs and switches to it. */
+    fun useOfflineFile(file: java.io.File) {
+        val api = com.arin.data.SavedApi("📱 ${file.nameWithoutExtension} (offline)", com.arin.llm.LocalModel.BASE_URL,
+            com.arin.llm.ApiFormat.OpenAI.name, com.arin.llm.LocalModel.MODEL_ID, "local:${file.name}")
+        settings.setApiKey(api, com.arin.llm.LocalModel.DUMMY_KEY)
+        if (savedApis.none { it.slotId == api.slotId }) { savedApis.add(0, api); settings.savedApis = savedApis.toList() }
+        useSavedApi(api)
+    }
+
+    fun deleteOfflineModel(file: java.io.File) {
+        val app = getApplication<Application>()
+        ArinApp.scope.launch {
+            if (com.arin.llm.LocalModel.lastModel(app)?.name == file.name) com.arin.llm.LocalModel.stop(app)
+            file.delete()
+            savedApis.removeAll { it.id == "local:${file.name}" }
+            settings.savedApis = savedApis.toList()
+            activeApiTick++
+            offlineStatus = "Deleted ${file.name}."
+        }
+    }
+
+    fun stopOfflineModel() {
+        val app = getApplication<Application>()
+        ArinApp.scope.launch { com.arin.llm.LocalModel.stop(app); offlineStatus = "Offline model stopped (frees the phone's memory)." }
     }
 
     /** Bumped when the active saved API changes, so the UI re-reads it. */

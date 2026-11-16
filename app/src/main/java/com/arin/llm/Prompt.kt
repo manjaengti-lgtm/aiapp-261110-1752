@@ -223,6 +223,26 @@ object Prompt {
     }
     private val rememberTag = Regex("""<remember>(.{1,300}?)</remember>""", RegexOption.DOT_MATCHES_ALL)
 
+    /**
+     * A short system prompt for models running offline on the phone: the full one is thousands of tokens,
+     * which a phone CPU would spend minutes reading before every reply.
+     */
+    fun localSystem(memories: List<Memory>, aboutPerson: String = "", howToAnswer: String = "", style: String = ""): String = buildString {
+        append("You are Arin, a helpful assistant running offline on the person's phone. Answer directly and clearly. ")
+        append("Use Markdown when it helps (short lists, fenced code blocks). If you don't know something, say so.\n")
+        when (style) {
+            "Concise" -> append("Keep answers short.\n")
+            "Detailed" -> append("Give thorough, detailed answers.\n")
+            "Formal" -> append("Use a formal tone.\n")
+        }
+        if (aboutPerson.isNotBlank()) append("About the person: ").append(aboutPerson.take(800)).append('\n')
+        if (howToAnswer.isNotBlank()) append("How they want answers: ").append(howToAnswer.take(800)).append('\n')
+        if (memories.isNotEmpty()) {
+            append("Things the person asked you to remember:\n")
+            memories.takeLast(20).forEach { append("- ").append(it.text.take(200)).append('\n') }
+        }
+    }
+
     fun system(
         webSearch: Boolean,
         memoryOn: Boolean,
