@@ -165,9 +165,30 @@ class Settings(context: Context) {
         .apply()
 
     fun setKey(provider: Provider, value: String) = keys.edit().putString(slot(provider), value.trim()).apply()
+
+    /** Key saved for one API (falls back to the key saved for its address, from older versions). */
+    fun apiKey(api: SavedApi): String =
+        keys.getString("Api@${api.slotId}", null)?.takeIf { it.isNotBlank() } ?: keyFor(api.baseUrl)
+
+    fun setApiKey(api: SavedApi, key: String) = keys.edit().putString("Api@${api.slotId}", key.trim()).apply()
+
+    /** Which saved API is in use (several may share one base URL). */
+    var activeApiId: String
+        get() = prefs.getString("active_api_id", "").orEmpty()
+        set(value) = prefs.edit().putString("active_api_id", value).apply()
 }
 
 
 /** A custom API the person saved, to switch to with one tap. */
 @kotlinx.serialization.Serializable
-data class SavedApi(val name: String, val baseUrl: String, val format: String = "OpenAI", val model: String = "")
+data class SavedApi(
+    val name: String,
+    val baseUrl: String,
+    val format: String = "OpenAI",
+    val model: String = "",
+    /** Unique per saved API, so several can share one base URL (different keys or models). Blank = saved before ids. */
+    val id: String = "",
+) {
+    /** Stable key for storage: the id, or the address for APIs saved by older versions. */
+    val slotId: String get() = id.ifBlank { "url:$baseUrl" }
+}

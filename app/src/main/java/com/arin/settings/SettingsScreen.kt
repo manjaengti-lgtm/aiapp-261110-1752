@@ -615,7 +615,7 @@ private fun MyApis(vm: ChatViewModel) {
         )
     }
     vm.savedApis.forEach { api ->
-        val inUse = vm.currentSavedApi() == api
+        val inUse = vm.currentSavedApi()?.slotId == api.slotId
         Surface(
             color = if (inUse) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = MaterialTheme.shapes.medium,
@@ -762,7 +762,7 @@ private fun CustomApiSettings(vm: ChatViewModel) {
         )
     }
     vm.savedApis.forEach { api ->
-        val inUse = vm.currentSavedApi() == api
+        val inUse = vm.currentSavedApi()?.slotId == api.slotId
         Surface(
             color = if (inUse) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = MaterialTheme.shapes.medium,

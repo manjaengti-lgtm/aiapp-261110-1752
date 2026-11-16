@@ -1792,60 +1792,79 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Custom APIs saved by the person; one tap switches to any of them (each keeps its own key and model). */
     val savedApis = androidx.compose.runtime.mutableStateListOf<com.arin.data.SavedApi>().apply { addAll(settings.savedApis) }
 
-    /** Saves the API in use now under [name] (or renames it if it's already saved). */
+    /** Saves the API in use now under [name] as a NEW entry (or renames the one in use if it has that name). */
     fun saveCurrentApi(name: String) {
         val n = name.trim().ifBlank { com.arin.llm.CustomApi.label(customBaseUrl) }
-        val api = com.arin.data.SavedApi(n, customBaseUrl, customFormat.name)
-        val i = savedApis.indexOfFirst { it.baseUrl == customBaseUrl }
+        val cur = currentSavedApi()
+        val api = if (cur != null && cur.name == n) cur.copy(format = customFormat.name, model = customModel)
+            else com.arin.data.SavedApi(n, customBaseUrl, customFormat.name, customModel, java.util.UUID.randomUUID().toString())
+        settings.setApiKey(api, settings.key(Provider.Custom))
+        val i = savedApis.indexOfFirst { it.slotId == api.slotId }
         if (i >= 0) savedApis[i] = api else savedApis += api
         settings.savedApis = savedApis.toList()
+        settings.activeApiId = api.slotId
         notice = "Saved \"$n\""
     }
 
     fun removeSavedApi(api: com.arin.data.SavedApi) {
-        savedApis.remove(api)
+        savedApis.removeAll { it.slotId == api.slotId }
         settings.savedApis = savedApis.toList()
+        settings.setApiKey(api, "")
+        if (settings.activeApiId == api.slotId) settings.activeApiId = ""
     }
 
-    /** Switches replies to a saved API, with its own key and last model. */
+    /** Switches replies to a saved API, with its own key and model (even when another API shares its address). */
     fun useSavedApi(api: com.arin.data.SavedApi) {
         val format = runCatching { com.arin.llm.ApiFormat.valueOf(api.format) }.getOrDefault(com.arin.llm.ApiFormat.OpenAI)
-        if (api.model.isNotBlank() && settings.model(Provider.Custom).isNullOrBlank()) settings.setModelFor(api.baseUrl, api.model)
+        val key = settings.apiKey(api)
+        settings.activeApiId = api.slotId
         setCustomBase(api.baseUrl, format)
+        // The request code reads the key/model stored for the address: load THIS API's into it.
+        settings.setKeyFor(api.baseUrl, key)
+        if (api.model.isNotBlank()) settings.setModelFor(api.baseUrl, api.model)
         chooseProvider(Provider.Custom)
-        notice = "Using ${api.name}" + if (settings.key(Provider.Custom).isBlank()) " (no API key saved for it: tap Edit to add one)" else ""
+        activeApiTick++
+        notice = "Using ${api.name}" + if (key.isBlank()) " (no API key saved for it: tap Edit to add one)" else ""
     }
+
+    /** Bumped when the active saved API changes, so the UI re-reads it. */
+    var activeApiTick by mutableStateOf(0)
+        private set
 
     /**
      * Adds a new API, or changes [old], from one form: name, base URL, key, model and format.
-     * Returns a problem to show, or null when saved. The new API is switched on right away.
+     * Any number can be saved, including several for the same base URL. Returns a problem to show, or null.
      */
     fun saveApi(old: com.arin.data.SavedApi?, name: String, url: String, key: String, model: String, format: com.arin.llm.ApiFormat): String? {
         val base = com.arin.llm.CustomApi.normalize(url, format)
         if (base.isBlank()) return "Enter the base URL, e.g. https://example.com/v1"
         if (!base.startsWith("https://") && !base.startsWith("http://")) return "The base URL must start with https://"
-        val api = com.arin.data.SavedApi(name.trim().ifBlank { com.arin.llm.CustomApi.label(base) }, base, format.name, model.trim())
+        val id = old?.id?.ifBlank { null } ?: java.util.UUID.randomUUID().toString()
+        val api = com.arin.data.SavedApi(name.trim().ifBlank { com.arin.llm.CustomApi.label(base) }, base, format.name, model.trim(), id)
         // A key left empty while editing keeps the one already saved.
-        if (key.isNotBlank()) settings.setKeyFor(base, key)
-        else if (old != null && old.baseUrl != base) settings.setKeyFor(base, settings.keyFor(old.baseUrl))
-        settings.setModelFor(base, model)
-        // Replace the one being edited (or one with the same address); keep a single entry per address.
+        val keep = old?.let { settings.apiKey(it) }.orEmpty()
+        if (old != null && old.slotId != api.slotId) settings.setApiKey(old, "")
+        settings.setApiKey(api, key.ifBlank { keep })
         val list = savedApis.toMutableList()
-        val i = list.indexOfFirst { (old != null && it == old) || it.baseUrl == base }
+        val i = if (old != null) list.indexOfFirst { it.slotId == old.slotId } else -1
         if (i >= 0) list[i] = api else list += api
-        val cleaned = list.filterIndexed { idx, it -> it.baseUrl != base || idx == list.indexOf(api) }
         savedApis.clear()
-        savedApis.addAll(cleaned)
-        settings.savedApis = cleaned
+        savedApis.addAll(list)
+        settings.savedApis = list
         useSavedApi(api)
         return null
     }
 
-    fun hasKeyFor(api: com.arin.data.SavedApi) = settings.keyFor(api.baseUrl).isNotBlank()
+    fun hasKeyFor(api: com.arin.data.SavedApi) = settings.apiKey(api).isNotBlank()
 
     /** The saved API in use right now, if any. */
-    fun currentSavedApi(): com.arin.data.SavedApi? =
-        if (provider == Provider.Custom) savedApis.firstOrNull { it.baseUrl == customBaseUrl } else null
+    fun currentSavedApi(): com.arin.data.SavedApi? {
+        activeApiTick
+        if (provider != Provider.Custom) return null
+        val id = settings.activeApiId
+        return savedApis.firstOrNull { it.slotId == id && it.baseUrl == customBaseUrl }
+            ?: savedApis.firstOrNull { it.baseUrl == customBaseUrl }
+    }
 
     var customBaseUrl by mutableStateOf(settings.customBaseUrl)
         private set
@@ -1891,6 +1910,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveKey(p: Provider, key: String) {
         settings.setKey(p, key)
+        // Keep the saved API in use in step with a key typed in the API keys section.
+        if (p == Provider.Custom) currentSavedApi()?.let { settings.setApiKey(it, key) }
         if (p == provider) loadModels()
     }
 

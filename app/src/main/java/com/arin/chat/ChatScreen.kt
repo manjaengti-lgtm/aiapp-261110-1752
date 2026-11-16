@@ -315,7 +315,7 @@ private fun TopBar(vm: ChatViewModel, onMenu: () -> Unit, onNew: () -> Unit, onP
                     )
                     vm.savedApis.forEach { api ->
                         DropdownMenuItem(
-                            text = { Text(api.name + if (vm.currentSavedApi() == api) "  ✓" else "") },
+                            text = { Text(api.name + if (vm.currentSavedApi()?.slotId == api.slotId) "  ✓" else "") },
                             onClick = { vm.useSavedApi(api); menu = false },
                         )
                     }
