@@ -295,8 +295,7 @@ object Prompt {
 
         if (terminal) {
             append("NEVER use the terminal, git or gradle to build an APK, push to GitHub, or publish a release — that always fails ")
-            append("(the GitHub token is not in the terminal). Use the <build> tag for building and pushing; see the Building section.
-")
+            append("(the GitHub token is not in the terminal). Use the <build> tag for building and pushing; see the Building section.\n")
             append("Terminal: you can run shell commands on the person's phone. Use it ONLY for work that needs it: installing or ")
             append("running software, working with files or code, reverse engineering, or when the person asks you to run something. ")
             append("NEVER run commands (python, ImageMagick or anything else) to answer a question, to look at, crop or zoom an ")
