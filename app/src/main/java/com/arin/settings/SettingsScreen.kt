@@ -124,6 +124,16 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
                 CustomInstructionsSettings(vm)
             }
 
+            Section("Credits") {
+                Toggle(
+                    "Save credits",
+                    "Send the model less of the old conversation and smaller search and tool results, keeping recent context. " +
+                        "Replies cost far fewer tokens on long chats, with no change to the model.",
+                    vm.saveCredits,
+                    vm::toggleSaveCredits,
+                )
+            }
+
             Section("Memory") {
                 Toggle(
                     "Remember things about me",

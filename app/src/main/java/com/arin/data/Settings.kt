@@ -129,6 +129,11 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("memory_on", true)
         set(value) = prefs.edit().putBoolean("memory_on", value).apply()
 
+    /** Save credits: send the model less of the old conversation and smaller tool outputs, keeping recent context. */
+    var saveCredits: Boolean
+        get() = prefs.getBoolean("save_credits", true)
+        set(value) = prefs.edit().putBoolean("save_credits", value).apply()
+
     var notifyOnReply: Boolean
         get() = prefs.getBoolean("notify_on_reply", true)
         set(value) = prefs.edit().putBoolean("notify_on_reply", value).apply()

@@ -112,6 +112,45 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var memoryOn by mutableStateOf(settings.memoryOn)
         private set
 
+    /** Save credits: trim old conversation and large tool outputs sent to the model (keeps recent context). */
+    var saveCredits by mutableStateOf(settings.saveCredits)
+        private set
+
+    fun toggleSaveCredits(on: Boolean) {
+        saveCredits = on
+        settings.saveCredits = on
+        notice = if (on) "Save credits is on: Arin sends the model less of the old chat, so replies cost fewer tokens."
+            else "Save credits is off: the whole chat is sent to the model (more tokens)."
+    }
+
+    /**
+     * Keeps the request small: the first user turn (for context) plus the most recent turns that fit [maxChars],
+     * and any turn carrying an image/PDF. Trimming old text, not the model, is what saves credits.
+     */
+    private fun budgetTurns(turns: List<Turn>, maxChars: Int): List<Turn> {
+        if (turns.size <= 3) return turns
+        val keep = LinkedHashSet<Int>()
+        turns.indices.firstOrNull { turns[it].fromUser }?.let { keep += it }      // anchor: first question
+        turns.indices.filter { turns[it].hasMedia }.forEach { keep += it }        // never drop images/PDFs
+        var used = turns.filter { it.hasMedia }.sumOf { it.text.length + 4_000 }  // images count as heavy
+        for (i in turns.indices.reversed()) {                                     // then recent turns, newest first
+            if (i in keep) continue
+            val size = turns[i].text.length
+            if (used + size > maxChars && keep.size > 2) break
+            keep += i; used += size
+        }
+        val kept = turns.filterIndexed { i, _ -> i in keep }
+        // Merge any two same-role turns the trimming left adjacent, so providers that need alternating roles (Claude) stay valid.
+        val merged = mutableListOf<Turn>()
+        for (t in kept) {
+            val last = merged.lastOrNull()
+            if (last != null && last.fromUser == t.fromUser && !last.hasMedia && !t.hasMedia) {
+                merged[merged.lastIndex] = last.copy(text = last.text + "\n\n" + t.text)
+            } else merged += t
+        }
+        return merged
+    }
+
     /** Custom instructions (Settings): about the person, and how to answer. */
     var aboutYou by mutableStateOf(settings.aboutYou)
         private set
@@ -1112,7 +1151,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                 else turns + Turn(false, text.toString()) +
                                     Turn(true, "Your reply above was cut off mid-way. Continue it from exactly where it stopped. Do not repeat anything already written and do not start over — just carry straight on.")
                             try {
-                                Llm.stream(p, key, m, system, streamTurns).collect { d ->
+                                val sent = budgetTurns(streamTurns, if (saveCredits) 14_000 else 120_000)
+                                Llm.stream(p, key, m, system, sent).collect { d ->
                                     if (steerPending) throw SteerInterrupt()
                                     when (d) {
                                         is Delta.Text -> {
@@ -1268,7 +1308,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                 }
                                 page != null -> {
                                     status = "Reading " + page.removePrefix("https://").removePrefix("http://").take(60)
-                                    "Content of $page:\n\n" + runCatching { com.arin.builder.WebTools.fetch(page) }.getOrElse { "Couldn't open it: ${it.message}" }.take(24_000)
+                                    "Content of $page:\n\n" + runCatching { com.arin.builder.WebTools.fetch(page) }.getOrElse { "Couldn't open it: ${it.message}" }.take(if (saveCredits) 8_000 else 24_000)
                                 }
                                 else -> {
                                     val (name, url) = file!!
@@ -1376,7 +1416,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     hits.take(5).forEach { h -> if (sources.none { it.url == h.url }) sources += Source(h.title, h.url) }
                     status = null
                     turns += Turn(false, "<search>$q</search>")
-                    turns += Turn(true, results + "\n\nNow answer my earlier message using these results where they help.")
+                    val trimmed = if (saveCredits) results.take(6_000) else results
+                    turns += Turn(true, trimmed + "\n\nNow answer my earlier message using these results where they help.")
                 }
                 if (Prompt.clean(answer).isBlank() && ran.isEmpty()) failure = "The model sent an empty reply. Tap Retry, or pick another model."
             } catch (e: CancellationException) {
