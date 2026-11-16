@@ -1301,7 +1301,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         val saidNow = listOf(userSaid) + ran.filter { it.kind == "steer" }.map { it.command }
                         val mayBuild = saidNow.any { Prompt.saysBuild(it, hasChatBuild) }
                         // The person said "build" but the reply has no <build> tag: ask for it once.
-                        if (buildNudges < 1 && !working && saidNow.any { Prompt.ordersBuild(it) } &&
+                        if (buildNudges < 2 && saidNow.any { Prompt.ordersBuild(it) } &&
                             Prompt.buildRequest(full) == null && Prompt.selfUpdate(full) == null &&
                             !com.arin.builder.BuildRunner.running && !Prompt.clean(full).trimEnd().endsWith("?")
                         ) {
@@ -1309,10 +1309,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                             turns += Turn(false, full)
                             turns += Turn(
                                 true,
-                                "The person told you to build, but your reply had no <build> tag, so nothing started. If this is about " +
-                                    "an Android app, send it now: <build name=\"App name\">the complete numbered specification of " +
-                                    "EVERYTHING discussed in this conversation</build>, with at most one short sentence before it. " +
-                                    "If they meant something else, just answer them.",
+                                "The person told you to build/push to GitHub, but your reply had no <build> tag, so nothing started. " +
+                                    "STOP using the terminal for this — git and the GitHub token do NOT work from the terminal. Send the tag " +
+                                    "NOW: <build name=\"App name\">the complete numbered specification of EVERYTHING discussed</build>, with at " +
+                                    "most one short sentence before it. Build mode pushes to GitHub, builds the APK and posts the APK + zip " +
+                                    "links here. If they meant something else, just answer them.",
                             )
                             liveText = ""
                             continue
@@ -1404,11 +1405,21 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 val buildAsked = if (failure == null && !stopped) Prompt.buildRequest(answer) else null
                 var buildNote = ""
                 if (buildAsked != null) {
-                    // A build is prepared, but nothing starts until the person picks where to build it.
-                    pendingBuild = buildAsked.first + "\u0000" + buildAsked.second
-                    buildNote = if (saidAll.any { Prompt.saysBuild(it, hasChatBuild) })
-                        "\n\n_Where should I build it? Pick below — nothing builds until you choose._"
-                    else "\n\n_Where should I build it? Pick below when you're ready._"
+                    val ordered = saidAll.any { Prompt.saysBuild(it, hasChatBuild) }
+                    // If they said where ("build on github", "build on phone"), start there straight away.
+                    val named = saidAll.firstNotNullOfOrNull { Prompt.namedBuildTarget(it) }
+                    if (ordered && named != null) {
+                        val target = runCatching { BuildTarget.valueOf(named) }.getOrDefault(BuildTarget.CHAT)
+                        val (name, description) = buildAsked
+                        ArinApp.scope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                            startBuild(name, description, target)?.let { notice = it }
+                        }
+                    } else {
+                        // Prepared, but nothing starts until the person picks where to build it.
+                        pendingBuild = buildAsked.first + "\u0000" + buildAsked.second
+                        buildNote = if (ordered) "\n\n_Where should I build it? Pick below — nothing builds until you choose._"
+                        else "\n\n_Where should I build it? Pick below when you're ready._"
+                    }
                 }
                 // Pictures and videos: found by searches, plus any the model linked in its text, plus ones it drew.
                 foundMedia += com.arin.media.MediaSearch.linked(answer).filter { l -> foundMedia.none { it.url == l.url } }

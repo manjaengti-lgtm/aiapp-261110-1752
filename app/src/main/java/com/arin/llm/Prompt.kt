@@ -96,19 +96,44 @@ object Prompt {
     /** The person's message reduced to words: lower case, no punctuation or emoji. */
     private fun plainWords(text: String) = text.lowercase().replace(Regex("""[^a-z0-9\s]"""), " ").replace(Regex("""\s+"""), " ").trim()
 
+    // An imperative to build/push THE app (not "I want to build an app…"), even inside a longer sentence.
+    private val buildClause = Regex(
+        """(?i)\bbuild( it| now| the app| the apk| this app| that app| this| that| and (push|publish|give))\b""" +
+            """|\bmake the apk\b|\bcompile( it| the app| the apk| to apk| into (an )?apk)?\b""" +
+            """|\bpush\b[^.?!]{0,40}\bgithub\b|\bbuild\b[^.?!]{0,20}\bon github\b|\bgive me the (apk|app)\b""",
+    )
+    private val discussIntent = Regex(
+        """(?i)\b(i (want|would like|wanna|plan|intend|hope|am planning|'?m planning) to (build|make|create)|thinking (of|about) (build|mak|creat)|how (do|to|can) i|should i|idea for)\b""",
+    )
+
     /**
-     * True only for a short, plain order to build ("build", "build now", "ok build it", "make the APK").
-     * Anything else (a description, a question, "I want to build an app…", "add a login screen") is talk, not an order.
+     * True for an order to build/push THE app, including inside a longer sentence ("push to github and build the apk").
+     * Still false for plain discussion ("I want to build an app…"), questions, and "don't build yet".
      */
     fun ordersBuild(text: String): Boolean {
+        if (notYet.containsMatchIn(text) || text.trim().endsWith("?") || discussIntent.containsMatchIn(text)) return false
         val w = plainWords(text)
-        return w.isNotEmpty() && w.split(' ').size <= 8 && !text.trim().endsWith("?") && strictBuild.matches(w)
+        if (w.split(' ').size <= 8 && strictBuild.matches(w)) return true
+        return buildClause.containsMatchIn(text)
     }
 
     /** True when the person's latest message lets a build start: an order to build, or "try again" after a build in this chat. */
     fun saysBuild(text: String, hasChatBuild: Boolean): Boolean {
         val w = plainWords(text)
         return ordersBuild(text) || (hasChatBuild && w.split(' ').size <= 6 && strictRetry.matches(w))
+    }
+
+    /** When a build order names where to build, return it ("on github"/"cloud" → chat, "phone"/"local" → phone, "codespace", "build tab"). */
+    fun namedBuildTarget(text: String): String? {
+        val t = plainWords(text)
+        return when {
+            Regex("\\bcodespace\\b").containsMatchIn(t) -> "CODESPACE"
+            Regex("\\b(on|to|in|using|via)?\\s*(this )?(phone|device|locally|local|offline)\\b").containsMatchIn(t) &&
+                !t.contains("github") -> "PHONE"
+            Regex("\\bbuild tab\\b").containsMatchIn(t) -> "BUILD_TAB"
+            Regex("\\b(github|git hub|cloud|online)\\b").containsMatchIn(t) -> "CHAT"
+            else -> null
+        }
     }
 
     /** True for a short, plain order to update Arin itself ("update", "update arin now"), or to build. */
@@ -269,6 +294,9 @@ object Prompt {
         }
 
         if (terminal) {
+            append("NEVER use the terminal, git or gradle to build an APK, push to GitHub, or publish a release — that always fails ")
+            append("(the GitHub token is not in the terminal). Use the <build> tag for building and pushing; see the Building section.
+")
             append("Terminal: you can run shell commands on the person's phone. Use it ONLY for work that needs it: installing or ")
             append("running software, working with files or code, reverse engineering, or when the person asks you to run something. ")
             append("NEVER run commands (python, ImageMagick or anything else) to answer a question, to look at, crop or zoom an ")
@@ -322,6 +350,14 @@ object Prompt {
         append("RULE 1b, show the plan first: before the first build of an app, lay out a short, clear plan the person can follow — ")
         append("the screens and main features, the data it keeps, and the libraries it needs — as a short numbered list in plain words, ")
         append("and ask them to say \"build\" when it looks right. Don't send the <build> tag in that planning reply.\n")
+        append("RULE 1c, THE TAG IS THE ONLY WAY — never the terminal: to build or compile an app into an APK, OR to push a ")
+        append("project to GitHub and get the APK and source-zip links, you MUST use the <build> tag. Build mode does the GitHub ")
+        append("push, builds the APK, fixes errors, and posts the APK + source-zip links in THIS chat (and the errors if it fails). ")
+        append("You CANNOT do any of this from the terminal: the person's GitHub token lives inside the app, NOT in the terminal, so ")
+        append("git push / gh / git clone / gradle / keytool will ALWAYS fail. NEVER run terminal or git commands to build, push or ")
+        append("publish — don't look for a token, don't check git config, don't try to clone or push. The terminal and REA are only ")
+        append("for inspecting and reverse-engineering apps. When asked to build or push to GitHub, go straight to the <build> tag.
+")
         append("RULE 2, build everything: when the person says build, don't ask more questions. End your reply with ")
         append("<build name=\"App name\">the COMPLETE specification</build>. Go back through the WHOLE conversation and write down ")
         append("every single thing that was asked for or agreed, as a numbered list: every screen, feature, button, option, text, ")
