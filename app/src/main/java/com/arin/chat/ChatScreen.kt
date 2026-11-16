@@ -294,7 +294,7 @@ private fun TopBar(vm: ChatViewModel, onMenu: () -> Unit, onNew: () -> Unit, onP
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            vm.modelLabel(),
+                            vm.modelLabel() + if (vm.reaActive()) "  ·  REA on" else "",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                             maxLines = 1,

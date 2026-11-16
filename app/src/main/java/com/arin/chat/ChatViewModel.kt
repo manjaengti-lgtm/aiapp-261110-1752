@@ -1134,9 +1134,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     howToAnswer = howToAnswer,
                     style = replyStyle,
                     deepResearch = deep,
-                ) + latestBuildInfo() + (if (reaChat) "\n\nREA (reverse engineering) is ON in this chat." else
-                    "\n\nREA (reverse engineering) is OFF in this chat: its tools are not available here, so never call them. " +
-                    "If asked whether REA is active, say no, and that it can be switched on for this chat from the ⋮ menu.")
+                ) + latestBuildInfo() + (if (reaChat) "\n\nREA STATUS (live, from the app): REA is ON in this chat." else
+                    "\n\nREA STATUS (live, from the app — this overrides anything in memory or past chats): REA is OFF in this chat. " +
+                    "It is not connected here and its tools can't be called. Any remembered REA facts (tool counts, versions, " +
+                    "'connected') describe OTHER chats, not this one. If asked whether REA is active here, answer plainly: no, " +
+                    "and it can be switched on for this chat from the ⋮ menu → Activate reverse engineering (REA).")
                 var recalls = 0
                 var searches = 0
                 while (true) {
