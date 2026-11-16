@@ -1134,7 +1134,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     howToAnswer = howToAnswer,
                     style = replyStyle,
                     deepResearch = deep,
-                ) + latestBuildInfo()
+                ) + latestBuildInfo() + (if (reaChat) "\n\nREA (reverse engineering) is ON in this chat." else
+                    "\n\nREA (reverse engineering) is OFF in this chat: its tools are not available here, so never call them. " +
+                    "If asked whether REA is active, say no, and that it can be switched on for this chat from the ⋮ menu.")
                 var recalls = 0
                 var searches = 0
                 while (true) {
@@ -1244,7 +1246,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         liveText = ""
                         val (name, body) = call
                         val run = if (name == "find_tools") {
-                            com.arin.data.CommandRun("find_tools: $body", com.arin.mcp.Mcp.find(body), 0, kind = "tool")
+                            com.arin.data.CommandRun("find_tools: $body", com.arin.mcp.Mcp.find(body, allowed = activeNames), 0, kind = "tool")
                         } else {
                             val args = runCatching {
                                 kotlinx.serialization.json.Json.parseToJsonElement(body.ifBlank { "{}" }) as kotlinx.serialization.json.JsonObject
@@ -1255,7 +1257,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                 !askToRun(label, tool = true) -> com.arin.data.CommandRun(label, "The person chose not to allow this tool call.", null, ran = false, kind = "tool")
                                 else -> {
                                     status = "Using $name"
-                                    val r = com.arin.mcp.Mcp.call(app, name, args)
+                                    val r = com.arin.mcp.Mcp.call(app, name, args, activeNames)
                                     status = null
                                     com.arin.data.CommandRun(label, shorten(r.text), if (r.isError) 1 else 0, kind = "tool")
                                 }

@@ -273,17 +273,18 @@ object Mcp {
     }
 
     /** Finds a tool by name ("tool" or "server.tool"). */
-    fun tool(name: String): McpTool? {
-        val (srv, t) = if ('.' in name && connected().any { name.startsWith(it.server.name + ".") }) {
+    fun tool(name: String, allowed: Set<String>? = null): McpTool? {
+        val live = connected(allowed)
+        val (srv, t) = if ('.' in name && live.any { name.startsWith(it.server.name + ".") }) {
             name.substringBefore('.') to name.substringAfter('.')
         } else null to name
-        return connected().filter { srv == null || it.server.name == srv }.flatMap { it.tools }.firstOrNull { it.name == t }
+        return live.filter { srv == null || it.server.name == srv }.flatMap { it.tools }.firstOrNull { it.name == t }
     }
 
     /** Tools whose name or description matches the words in [query], with their parameters. */
-    fun find(query: String, limit: Int = 8): String {
+    fun find(query: String, limit: Int = 8, allowed: Set<String>? = null): String {
         val words = query.lowercase().split(Regex("[^a-z0-9]+")).filter { it.length > 1 }
-        val all = connected().flatMap { it.tools }
+        val all = connected(allowed).flatMap { it.tools }
         val scored = all.map { t ->
             val hay = (t.name.replace('_', ' ') + " " + t.description).lowercase()
             t to words.sumOf { w -> (if (t.name.contains(w)) 3 else 0) + (if (hay.contains(w)) 1 else 0) }
@@ -298,8 +299,11 @@ object Mcp {
             (if (schema.length > 4_000) schema.take(4_000) + "…" else schema.ifBlank { "{}" })
     }
 
-    suspend fun call(context: Context, name: String, args: JsonObject): McpResult {
-        val t = tool(name) ?: return McpResult("There is no tool called \"$name\". Use find_tools to look it up.", true)
+    /** Calls a tool, but only from servers in [allowed] (the ones active in this chat; REA only where it's on). */
+    suspend fun call(context: Context, name: String, args: JsonObject, allowed: Set<String>? = null): McpResult {
+        val t = tool(name, allowed) ?: return McpResult(
+            if (allowed != null && tool(name) != null) "\"$name\" belongs to a server that is OFF in this chat (REA runs only in chats where it's switched on). Tell the person to turn it on from the ⋮ menu if they want it."
+            else "There is no tool called \"$name\". Use find_tools to look it up.", true)
         val client = clients[t.server] ?: return McpResult("${t.server} isn't connected.", true)
         return try {
             client.call(t.name, args)
