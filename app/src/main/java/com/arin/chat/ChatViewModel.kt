@@ -1910,8 +1910,24 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveKey(p: Provider, key: String) {
         settings.setKey(p, key)
-        // Keep the saved API in use in step with a key typed in the API keys section.
-        if (p == Provider.Custom) currentSavedApi()?.let { settings.setApiKey(it, key) }
+        // Keep the saved API in use in step with a key typed in the API keys section,
+        // and save a new address automatically so it shows in Your APIs (chat menu) from now on.
+        if (p == Provider.Custom && key.isNotBlank()) {
+            val cur = currentSavedApi()
+            if (cur != null) settings.setApiKey(cur, key)
+            else {
+                val api = com.arin.data.SavedApi(
+                    com.arin.llm.CustomApi.label(customBaseUrl), customBaseUrl, customFormat.name,
+                    settings.model(Provider.Custom).orEmpty(), java.util.UUID.randomUUID().toString(),
+                )
+                settings.setApiKey(api, key)
+                savedApis += api
+                settings.savedApis = savedApis.toList()
+                settings.activeApiId = api.slotId
+                activeApiTick++
+                notice = "Saved ${api.name} to Your APIs: switch to it any time from the model menu in the chat."
+            }
+        }
         if (p == provider) loadModels()
     }
 

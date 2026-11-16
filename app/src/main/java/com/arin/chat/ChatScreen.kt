@@ -264,6 +264,11 @@ fun ChatScreen(
 @Composable
 private fun TopBar(vm: ChatViewModel, onMenu: () -> Unit, onNew: () -> Unit, onProject: (com.arin.data.Project) -> Unit) {
     var menu by remember { mutableStateOf(false) }
+    var addApi by remember { mutableStateOf(false) }
+    var editApi by remember { mutableStateOf<com.arin.data.SavedApi?>(null) }
+    if (addApi || editApi != null) {
+        com.arin.settings.ApiForm(vm, editApi, onClose = { addApi = false; editApi = null })
+    }
     Row(
         Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -305,22 +310,36 @@ private fun TopBar(vm: ChatViewModel, onMenu: () -> Unit, onNew: () -> Unit, onP
                 }
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                // Saved APIs: switch service with one tap.
-                if (vm.savedApis.isNotEmpty()) {
-                    Text(
-                        "Your APIs",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                // Your APIs: every API you added, switch with one tap, add more right here.
+                Text(
+                    "Your APIs",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                )
+                vm.savedApis.forEach { api ->
+                    val inUse = vm.currentSavedApi()?.slotId == api.slotId
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(api.name + if (inUse) "  ✓" else "")
+                                Text(
+                                    (api.model.ifBlank { com.arin.llm.CustomApi.host(api.baseUrl) }) + if (vm.hasKeyFor(api)) "" else " · no key",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
+                        },
+                        onClick = { vm.useSavedApi(api); menu = false },
+                        trailingIcon = { androidx.compose.material3.TextButton(onClick = { editApi = api; menu = false }) { Text("Edit") } },
                     )
-                    vm.savedApis.forEach { api ->
-                        DropdownMenuItem(
-                            text = { Text(api.name + if (vm.currentSavedApi()?.slotId == api.slotId) "  ✓" else "") },
-                            onClick = { vm.useSavedApi(api); menu = false },
-                        )
-                    }
-                    androidx.compose.material3.HorizontalDivider()
                 }
+                DropdownMenuItem(
+                    text = { Text("+ Add API", color = MaterialTheme.colorScheme.primary) },
+                    onClick = { addApi = true; menu = false },
+                )
+                androidx.compose.material3.HorizontalDivider()
                 Text(
                     vm.currentSavedApi()?.name ?: vm.provider.label,
                     style = MaterialTheme.typography.labelMedium,

@@ -647,7 +647,7 @@ private fun MyApis(vm: ChatViewModel) {
 /** One form for an API: name, base URL, key, model and request format. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun ApiForm(vm: ChatViewModel, old: com.arin.data.SavedApi?, onClose: () -> Unit) {
+internal fun ApiForm(vm: ChatViewModel, old: com.arin.data.SavedApi?, onClose: () -> Unit) {
     var name by remember { mutableStateOf(old?.name ?: "") }
     var url by remember { mutableStateOf(old?.baseUrl ?: "") }
     var key by remember { mutableStateOf("") }
