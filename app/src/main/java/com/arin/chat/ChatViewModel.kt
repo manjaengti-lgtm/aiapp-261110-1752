@@ -659,7 +659,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
         lastFailure = if (result.success) "" else
             "The last Build mode run ($name) FAILED. Reason: ${result.message}" +
-                (if (result.log.isNotBlank()) " Full error log:\n${result.log.take(14_000)}\n" else "") +
+                (if (result.log.isNotBlank()) " Error log (the full list is in the chat message):\n${result.log.take(4_000)}\n" else "") +
                 (result.runUrl?.let { " Full log: $it ." } ?: "") +
                 " When the person asks why it failed, explain from this log in plain words; to fix it, emit a <build> tag that says what to change.\n\n"
         postToBuildChat(Message(fromUser = false, text = text), progressId, steps)
@@ -1167,21 +1167,57 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                     Turn(true, "Your reply above was cut off mid-way. Continue it from exactly where it stopped. Do not repeat anything already written and do not start over — just carry straight on.")
                             try {
                                 val sent = if (saveCredits) dedupeTurns(streamTurns) else streamTurns
-                                Llm.stream(p, key, m, system, sent, cache = saveCredits).collect { d ->
-                                    if (steerPending) throw SteerInterrupt()
-                                    when (d) {
-                                        is Delta.Text -> {
-                                            text.append(d.text)
-                                            val now = text.toString()
-                                            // Hold back what may be a search request; show everything else as it arrives.
-                                            liveText = if (useSearch && searches < Prompt.MAX_SEARCHES && Prompt.maybeSearch(now)) "" else Prompt.clean(now)
-                                        }
-                                        is Delta.Thinking -> {
-                                            if (thinkStart == 0L) thinkStart = System.currentTimeMillis()
-                                            thinking.append(d.text)
-                                            liveThinking = thinking.toString()
+                                // Speed check: how big the request is and how long the service takes to start answering.
+                                val t0 = System.currentTimeMillis()
+                                var firstAt = 0L
+                                var lastUi = 0L
+                                val sentChars = system.length + sent.sumOf { it.text.length }
+                                val waitJob = launch {
+                                    while (firstAt == 0L) {
+                                        kotlinx.coroutines.delay(1_000)
+                                        val secs = (System.currentTimeMillis() - t0) / 1000
+                                        if (firstAt == 0L && secs >= 3) status = "Waiting for ${m.substringAfterLast('/')} to start answering… ${secs}s"
+                                    }
+                                }
+                                try {
+                                    Llm.stream(p, key, m, system, sent, cache = saveCredits).collect { d ->
+                                        if (steerPending) throw SteerInterrupt()
+                                        if (firstAt == 0L) { firstAt = System.currentTimeMillis(); waitJob.cancel(); status = null }
+                                        val nowMs = System.currentTimeMillis()
+                                        // Redraw at most ~15 times a second: re-rendering the whole reply on every token
+                                        // made long answers crawl on the phone.
+                                        val redraw = nowMs - lastUi >= 66
+                                        when (d) {
+                                            is Delta.Text -> {
+                                                text.append(d.text)
+                                                if (redraw) {
+                                                    lastUi = nowMs
+                                                    val now = text.toString()
+                                                    // Hold back what may be a search request; show everything else as it arrives.
+                                                    liveText = if (useSearch && searches < Prompt.MAX_SEARCHES && Prompt.maybeSearch(now)) "" else Prompt.clean(now)
+                                                }
+                                            }
+                                            is Delta.Thinking -> {
+                                                if (thinkStart == 0L) thinkStart = System.currentTimeMillis()
+                                                thinking.append(d.text)
+                                                if (redraw) { lastUi = nowMs; liveThinking = thinking.toString() }
+                                            }
                                         }
                                     }
+                                } finally {
+                                    waitJob.cancel()
+                                    if (status?.startsWith("Waiting for ") == true) status = null
+                                }
+                                // Show the final text even if the last tokens fell between redraws.
+                                text.toString().let { now -> liveText = if (useSearch && searches < Prompt.MAX_SEARCHES && Prompt.maybeSearch(now)) "" else Prompt.clean(now) }
+                                if (thinking.isNotEmpty()) liveThinking = thinking.toString()
+                                val end = System.currentTimeMillis()
+                                runCatching {
+                                    com.arin.CrashLog.note(app, "speed", "Reply speed: ${m.substringAfterLast('/')}",
+                                        "Service: ${if (p == Provider.Custom) com.arin.llm.CustomApi.label() else p.label}\n" +
+                                            "Model: $m\nSent: ~${sentChars / 4} tokens ($sentChars chars, ${sent.size} turns)\n" +
+                                            "Time until the first word: ${if (firstAt == 0L) "none" else "%.1f s".format((firstAt - t0) / 1000.0)}\n" +
+                                            "Total time: ${"%.1f".format((end - t0) / 1000.0)} s\nReply: ${text.length} chars, thinking: ${thinking.length} chars")
                                 }
                                 break
                             } catch (e: SteerInterrupt) {
