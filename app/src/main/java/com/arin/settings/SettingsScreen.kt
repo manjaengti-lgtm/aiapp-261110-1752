@@ -54,7 +54,7 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Section("My APIs") {
+            Section("My APIs — add as many as you want") {
                 MyApis(vm)
             }
 
@@ -185,7 +185,7 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
             }
 
             // Extra features, folded away so the screen stays simple. Tap a row to open it.
-            FoldSection("Custom API", if (vm.provider == Provider.Custom) "In use · ${vm.customBaseUrl}" else "Use any service with your own base URL and key") {
+            FoldSection("Custom API", "${vm.savedApis.size} saved" + (vm.currentSavedApi()?.let { " · using ${it.name}" } ?: "") + " · tap to add more services") {
                 CustomApiSettings(vm)
             }
             FoldSection(
@@ -638,7 +638,7 @@ private fun MyApis(vm: ChatViewModel) {
             }
         }
     }
-    androidx.compose.material3.Button(onClick = { adding = true }) { Text("+ Add API") }
+    androidx.compose.material3.Button(onClick = { adding = true }) { Text(if (vm.savedApis.isEmpty()) "+ Add API" else "+ Add another API (${vm.savedApis.size} saved)") }
     if (adding || editing != null) {
         ApiForm(vm, editing, onClose = { adding = false; editing = null })
     }
@@ -647,13 +647,13 @@ private fun MyApis(vm: ChatViewModel) {
 /** One form for an API: name, base URL, key, model and request format. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun ApiForm(vm: ChatViewModel, old: com.arin.data.SavedApi?, onClose: () -> Unit) {
-    var name by remember { mutableStateOf(old?.name ?: "") }
-    var url by remember { mutableStateOf(old?.baseUrl ?: "") }
+internal fun ApiForm(vm: ChatViewModel, old: com.arin.data.SavedApi?, onClose: () -> Unit, preset: com.arin.llm.CustomApi.Preset? = null) {
+    var name by remember { mutableStateOf(old?.name ?: preset?.name ?: "") }
+    var url by remember { mutableStateOf(old?.baseUrl ?: preset?.baseUrl ?: "") }
     var key by remember { mutableStateOf("") }
-    var model by remember { mutableStateOf(old?.model ?: "") }
+    var model by remember { mutableStateOf(old?.model ?: preset?.models?.firstOrNull()?.second ?: "") }
     var format by remember {
-        mutableStateOf(old?.let { runCatching { com.arin.llm.ApiFormat.valueOf(it.format) }.getOrNull() } ?: com.arin.llm.ApiFormat.OpenAI)
+        mutableStateOf(old?.let { runCatching { com.arin.llm.ApiFormat.valueOf(it.format) }.getOrNull() } ?: preset?.format ?: com.arin.llm.ApiFormat.OpenAI)
     }
     var problem by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -676,6 +676,14 @@ internal fun ApiForm(vm: ChatViewModel, old: com.arin.data.SavedApi?, onClose: (
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(model, { model = it.trim() }, label = { Text("Model id") }, placeholder = { Text("e.g. deepseek-v4.1-flash") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                com.arin.llm.CustomApi.presetFor(com.arin.llm.CustomApi.normalize(url, format))?.models?.takeIf { it.isNotEmpty() }?.let { list ->
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        list.forEach { (label, id) -> FilterChip(selected = model == id, onClick = { model = id }, label = { Text(label) }) }
+                    }
+                }
+                com.arin.llm.CustomApi.presetFor(com.arin.llm.CustomApi.normalize(url, format))?.let {
+                    Text("Get a key at ${it.keyPage}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Text("Request format", style = MaterialTheme.typography.labelLarge)
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     com.arin.llm.ApiFormat.entries.forEach { f ->
@@ -742,129 +750,25 @@ private fun CustomInstructionsSettings(vm: ChatViewModel) {
     ) { Text("Save") }
 }
 
-/** Your own service: base URL (typed or a preset), request format, key and model id. */
+/** Custom APIs: the full list (add as many as you like), plus one-tap services that open a new API form. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun CustomApiSettings(vm: ChatViewModel) {
-    val base = vm.customBaseUrl
-    var urlText by remember(base) { mutableStateOf(base) }
-    var modelText by remember(base) { mutableStateOf(vm.customModel) }
-    var modelNote by remember(base) { mutableStateOf<String?>(null) }
-
-    // Saved APIs: as many as you like, pick one to use.
-    var apiName by remember(base) { mutableStateOf(vm.savedApis.firstOrNull { it.baseUrl == base }?.name ?: "") }
-    Text("Your APIs", style = MaterialTheme.typography.titleSmall)
-    if (vm.savedApis.isEmpty()) {
-        Text(
-            "Save each API you use (base URL + key + model), then switch between them with one tap here or from the model menu on the chat screen.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-    vm.savedApis.forEach { api ->
-        val inUse = vm.currentSavedApi()?.slotId == api.slotId
-        Surface(
-            color = if (inUse) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = MaterialTheme.shapes.medium,
-            modifier = Modifier.fillMaxWidth().clickable { vm.useSavedApi(api) },
-        ) {
-            Row(Modifier.padding(start = 12.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.material3.RadioButton(selected = inUse, onClick = { vm.useSavedApi(api) })
-                Column(Modifier.weight(1f)) {
-                    Text(api.name, style = MaterialTheme.typography.bodyLarge)
-                    Text(api.baseUrl, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                }
-                TextButton(onClick = { vm.removeSavedApi(api) }) { Text("Remove") }
-            }
-        }
-    }
+    var preset by remember { mutableStateOf<com.arin.llm.CustomApi.Preset?>(null) }
+    MyApis(vm)
     Spacer(Modifier.height(4.dp))
-    Text("Set up an API", style = MaterialTheme.typography.titleSmall)
+    Text("Add a service", style = MaterialTheme.typography.titleSmall)
     Text(
-        "Tap a service or paste the base URL it gives you, add its key and model, then save it to Your APIs. " +
-            "Each address keeps its own key and model.",
+        "Tap a service to add it as a NEW API (it won't replace the ones above). Paste its key, pick a model, Save and use.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        com.arin.llm.CustomApi.presets.forEach { preset ->
-            FilterChip(
-                selected = base == preset.baseUrl,
-                onClick = { vm.setCustomBase(preset.baseUrl, preset.format) },
-                label = { Text(preset.name) },
-            )
+        com.arin.llm.CustomApi.presets.forEach { p ->
+            androidx.compose.material3.AssistChip(onClick = { preset = p }, label = { Text("+ " + p.name) })
         }
     }
-    OutlinedTextField(
-        value = urlText,
-        onValueChange = { urlText = it },
-        label = { Text("Base URL") },
-        placeholder = { Text("https://example.com/v1") },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    TextButton(
-        enabled = urlText.isNotBlank() && com.arin.llm.CustomApi.normalize(urlText, vm.customFormat) != base,
-        onClick = { vm.setCustomBase(urlText) },
-    ) { Text("Use this URL") }
-
-    Text("Request format", style = MaterialTheme.typography.bodyLarge)
-    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        com.arin.llm.ApiFormat.entries.forEach { f ->
-            FilterChip(selected = vm.customFormat == f, onClick = { vm.chooseCustomFormat(f) }, label = { Text(f.label) })
-        }
-    }
-    Text(
-        "Most services use the OpenAI format. Pick the Claude format for gateways that copy the Claude API.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-
-    KeyRow(vm, Provider.Custom, title = "API key for ${com.arin.llm.CustomApi.label(base)}", resetOn = base)
-
-    OutlinedTextField(
-        value = modelText,
-        onValueChange = { modelText = it; modelNote = null },
-        label = { Text("Model id (optional)") },
-        placeholder = { Text("e.g. deepseek-v4.1-flash:free") },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    // Models this service is known for: one tap fills in and saves the id.
-    com.arin.llm.CustomApi.presetFor(base)?.models?.takeIf { it.isNotEmpty() }?.let { list ->
-        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            list.forEach { (label, id) ->
-                FilterChip(
-                    selected = vm.customModel == id,
-                    onClick = { modelText = id; vm.saveCustomModel(id); modelNote = "Saved" },
-                    label = { Text(label) },
-                )
-            }
-        }
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = { vm.saveCustomModel(modelText); modelNote = "Saved" }) { Text("Save model") }
-        modelNote?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
-    }
-    Text(
-        "Arin loads the service's model list on its own. Type an id only if the list is missing or doesn't show the one you want.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    OutlinedTextField(
-        value = apiName,
-        onValueChange = { apiName = it.take(40) },
-        label = { Text("Name for this API") },
-        placeholder = { Text(com.arin.llm.CustomApi.label(base)) },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    androidx.compose.material3.Button(onClick = { vm.saveCurrentApi(apiName); vm.chooseProvider(Provider.Custom) }) {
-        Text(if (vm.savedApis.any { it.baseUrl == base }) "Update in Your APIs" else "Save to Your APIs")
-    }
-    if (vm.provider != Provider.Custom) {
-        OutlinedButton(onClick = { vm.chooseProvider(Provider.Custom) }) { Text("Use Custom API for replies") }
-    }
+    preset?.let { p -> ApiForm(vm, null, onClose = { preset = null }, preset = p) }
 }
 
 @Composable
