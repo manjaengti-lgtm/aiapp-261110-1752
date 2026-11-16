@@ -648,20 +648,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 append("⚠️ **The build of $name failed.**\n\n**Why it failed:** ${result.message}\n")
                 if (result.log.isNotBlank()) {
                     val lines = result.log.lines().filter { it.isNotBlank() }
-                    append("\n**Failure log**")
-                    if (lines.size > 60) append(" (first 60 of ${lines.size} lines)")
-                    append(":\n```\n")
-                    append(lines.take(60).joinToString("\n") { it.take(300) }.replace("```", "` ` `"))
+                    append("\n**All build errors** (${lines.size} line${if (lines.size == 1) "" else "s"}):\n```\n")
+                    append(lines.joinToString("\n") { it.take(500) }.replace("```", "` ` `"))
                     append("\n```\n")
                 }
-                result.runUrl?.let { append("\n- **Full build log:** [Open the run on GitHub]($it)\n") }
+                result.runUrl?.let { append("\n- **Full raw log on GitHub:** [Open the run]($it)\n") }
                 result.repoUrl?.let { append("- **GitHub repository:** [Open on GitHub]($it)\n") }
-                append("\nSay \"try again\" to keep fixing it, or describe what to change.")
+                append("\nTell me what to fix (or say \"try again\" / \"fix these errors\") and I\'ll correct them and rebuild.")
             }
         }
         lastFailure = if (result.success) "" else
             "The last Build mode run ($name) FAILED. Reason: ${result.message}" +
-                (if (result.log.isNotBlank()) " Error log:\n${result.log.take(4_000)}\n" else "") +
+                (if (result.log.isNotBlank()) " Full error log:\n${result.log.take(14_000)}\n" else "") +
                 (result.runUrl?.let { " Full log: $it ." } ?: "") +
                 " When the person asks why it failed, explain from this log in plain words; to fix it, emit a <build> tag that says what to change.\n\n"
         postToBuildChat(Message(fromUser = false, text = text), progressId, steps)

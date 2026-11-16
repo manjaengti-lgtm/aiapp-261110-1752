@@ -284,7 +284,7 @@ class GitHubClient(private val token: String) {
                 ann.orEmpty().mapNotNull { ((it as? JsonObject)?.get("message") as? JsonPrimitive)?.contentOrNull }
             }.filter { !it.contains("Node.js") && !it.contains("deprecated") && !it.contains("ubuntu-latest") }
         }.getOrNull().orEmpty()
-        return notes.joinToString("\n").ifBlank { "The build failed, but its error details couldn't be read." }.take(6000)
+        return notes.joinToString("\n").ifBlank { "The build failed, but its error details couldn't be read." }.take(14000)
     }
 
     /** The APK attached to the release tagged [tag] (e.g. "arin-12"), or null. */
@@ -356,16 +356,25 @@ class GitHubClient(private val token: String) {
             val picked = LinkedHashSet<String>()
             lines.forEachIndexed { i, l ->
                 val t = l.trim()
+                // Kotlin/Java compile errors, resource errors, and the Gradle failure block — all of them.
                 if (t.startsWith("e: ") || t.contains("error:", ignoreCase = true) ||
                     t.startsWith("ERROR:") || t.contains("Unresolved reference") ||
-                    t.contains("AAPT: error")
+                    t.contains("AAPT: error") || (t.contains("> Task") && t.endsWith("FAILED")) ||
+                    t.startsWith("FAILURE:") || t.startsWith("Caused by:") ||
+                    t.contains("Execution failed for task") || t.startsWith("* Where") ||
+                    t.contains("Compilation error") || t.contains("Could not resolve") ||
+                    t.contains("None of the following") || t.contains("overload resolution ambiguity", ignoreCase = true)
                 ) picked += t
+                // Keep the whole "What went wrong" explanation Gradle prints.
                 if (t.startsWith("* What went wrong")) {
-                    lines.drop(i + 1).take(8).forEach { picked += it.trim() }
+                    picked += t
+                    lines.drop(i + 1).takeWhile { !it.trim().startsWith("* Try") && !it.trim().startsWith("* Get more help") }
+                        .take(25).forEach { picked += it.trim() }
                 }
             }
             val text = picked.filter { it.isNotBlank() }.joinToString("\n")
-            return text.ifBlank { lines.takeLast(40).joinToString("\n") }.take(6000)
+            // If no recognised error lines, fall back to the tail of the log so something useful always shows.
+            return text.ifBlank { lines.takeLast(60).joinToString("\n") }.take(14000)
         }
     }
 }
