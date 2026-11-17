@@ -1135,13 +1135,22 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     if (problem != null) throw com.arin.llm.LlmException(problem)
                 }
                 val system = if (offline) Prompt.localSystem(memoryList, aboutYou, howToAnswer, replyStyle) else Prompt.system(
-                    searchFlag, memoryFlag, memoryList, project, useTerminal, com.arin.mcp.Mcp.promptSection(activeNames),
+                    searchFlag, memoryFlag, memoryList, project, useTerminal, com.arin.mcp.Mcp.promptSection(activeNames, compact = saveCredits),
                     terminalInfo = com.arin.terminal.Shell.describe(app),
                     pastChats = if (memoryFlag) withContext(Dispatchers.IO) { runCatching { store.recentTitles(chatId) }.getOrDefault("") } else "",
                     aboutPerson = aboutYou,
                     howToAnswer = howToAnswer,
                     style = replyStyle,
                     deepResearch = deep,
+                    lean = saveCredits,
+                    topics = Prompt.topics(
+                        history.filter { it.fromUser }.takeLast(3).joinToString("\n") { it.text } +
+                            // A pending build failure keeps the build rules in.
+                            (if (lastFailure.isNotEmpty()) "\nbuild" else "") + (if (deep) "\nfetch" else ""),
+                        hasBuild = hasChatBuild,
+                        usedTerminal = history.takeLast(8).any { it.commands.isNotEmpty() },
+                        reaChat = reaChat,
+                    ),
                 ) + latestBuildInfo() + (if (reaChat) "\n\nREA STATUS (live, from the app): REA is ON in this chat." else
                     "\n\nREA STATUS (live, from the app — this overrides anything in memory or past chats): REA is OFF in this chat. " +
                     "It is not connected here and its tools can't be called. Any remembered REA facts (tool counts, versions, " +

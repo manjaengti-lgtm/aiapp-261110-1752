@@ -326,7 +326,8 @@ object Mcp {
     }
 
     /** The part of the instructions that tells the model which tools exist and how to call them. */
-    fun promptSection(allowed: Set<String>? = null): String {
+    /** [compact] (Save credits): list only the first tool names; the model finds the rest with find_tools. */
+    fun promptSection(allowed: Set<String>? = null, compact: Boolean = false): String {
         val list = connected(allowed)
         if (list.isEmpty()) return ""
         return buildString {
@@ -342,8 +343,11 @@ object Mcp {
             append("Base claims on what the tools return.\n")
             list.forEach { c ->
                 append("\nServer \"").append(c.server.name).append("\" (").append(c.tools.size).append(" tools)")
-                if (c.instructions.isNotBlank()) append(". Its guidance: ").append(c.instructions.take(1_200))
-                append("\nTool names: ").append(c.tools.joinToString(", ") { it.name }).append('\n')
+                if (c.instructions.isNotBlank()) append(". Its guidance: ").append(c.instructions.take(if (compact) 500 else 1_200))
+                val names = if (compact && c.tools.size > 40) c.tools.take(40).joinToString(", ") { it.name } +
+                    " … and ${c.tools.size - 40} more: use find_tools with keywords to find them"
+                    else c.tools.joinToString(", ") { it.name }
+                append("\nTool names: ").append(names).append('\n')
             }
             append('\n')
         }

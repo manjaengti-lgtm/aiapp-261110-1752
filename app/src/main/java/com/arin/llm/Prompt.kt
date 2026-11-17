@@ -243,6 +243,28 @@ object Prompt {
         }
     }
 
+    private val topicWords = mapOf(
+        "build" to Regex("""\b(build|built|apk|app|apps|compile|github|gradle|kotlin|compose|screen|screens|plan|feature|features|android|try again|retry|repo|codespace|zip)\b""", RegexOption.IGNORE_CASE),
+        "terminal" to Regex("""\b(run|install|command|terminal|shell|bash|linux|file|files|folder|script|code|npm|pip|python|node|git|rea|reverse|decompile|disassemble|binary|apk|jadx|frida|server|port|error|log|debug)\b""", RegexOption.IGNORE_CASE),
+        "update" to Regex("""\b(arin|update|upgrade|bug|crash|this app|your app|new version|feature)\b""", RegexOption.IGNORE_CASE),
+        "draw" to Regex("""\b(draw|drawing|picture|image|illustrat\w*|generate|imagine|logo|wallpaper|art|sketch|paint\w*|design)\b""", RegexOption.IGNORE_CASE),
+        "web" to Regex("""\b(download|video|videos|image|images|photo|photos|show me|link|url|http|website|page|youtube|fetch|open)\b|https?://""", RegexOption.IGNORE_CASE),
+        "artifact" to Regex("""\b(html|web ?page|website|svg|document|program|script|code|landing|game|demo|calculator)\b""", RegexOption.IGNORE_CASE),
+        "recall" to Regex("""\b(remember|earlier|before|last time|previous|we discussed|you said|you suggested|continue|left off|my app|my project|again)\b""", RegexOption.IGNORE_CASE),
+    )
+
+    /**
+     * Which long rule blocks this conversation needs (Save credits), from the person's last few messages and
+     * what the chat already did. Generous on purpose: a block sent when unneeded costs a little, a missing one breaks a task.
+     */
+    fun topics(recentUserText: String, hasBuild: Boolean, usedTerminal: Boolean, reaChat: Boolean): Set<String> {
+        val t = topicWords.filter { (_, re) -> re.containsMatchIn(recentUserText) }.keys.toMutableSet()
+        if (hasBuild) t += "build"
+        if (usedTerminal || reaChat) t += "terminal"
+        if ("build" in t || "update" in t) t += "artifact"
+        return t
+    }
+
     fun system(
         webSearch: Boolean,
         memoryOn: Boolean,
@@ -256,7 +278,11 @@ object Prompt {
         howToAnswer: String = "",
         style: String = "",
         deepResearch: Boolean = false,
+        /** Save credits: send each long rule block only when [topics] says this conversation needs it. */
+        lean: Boolean = false,
+        topics: Set<String> = emptySet(),
     ): String = buildString {
+        fun need(t: String) = !lean || t in topics
         append("You are Arin, a helpful, friendly assistant in an Android app. Answer clearly and concisely. ")
         runCatching { com.arin.ArinApp.versionLabel(com.arin.ArinApp.instance) }.getOrNull()
             ?.let { append("This is Arin version ").append(it).append(". ") }
@@ -281,6 +307,7 @@ object Prompt {
             "Detailed" -> append("Reply style: detailed. Explain step by step, with reasons and examples, as a patient teacher would.\n\n")
             "Formal" -> append("Reply style: formal. Clear, polished, professional wording.\n\n")
         }
+        if (!need("draw")) append("To create a picture, write <draw>a description in English, under 90 words</draw>.\n\n") else {
         append("Pictures you create: when the person asks you to draw, generate, create or imagine a picture (not find a real photo), ")
         append("write <draw>a detailed description of the picture in English: subject, setting, style, lighting, colours</draw> ")
         append("in your reply. Arin creates the picture and shows it under your reply; add one short sentence about it. ")
@@ -288,6 +315,7 @@ object Prompt {
         append("missing details yourself and send the <draw> tag in that same reply (they can ask for changes after seeing it). ")
         append("Keep the description under 90 words, and always close the tag with </draw>. ")
         append("At most two per reply. For real things that exist (a person, a place, a product), use <images> instead.\n\n")
+        }
 
         if (deepResearch) {
             append("Deep research mode is ON for this question. Work like a careful researcher: plan what you need to find out, ")
@@ -301,10 +329,12 @@ object Prompt {
         append("Finishing any task: when you have used searches, tools or the terminal, don't end with a bare status line. Finish with ")
         append("a short clear summary of what you found or did, then one line telling the person what they can do next.\n\n")
 
+        if (need("artifact")) {
         append("Artifacts: when you write a complete web page, interactive demo, SVG image, standalone document or ")
         append("program the person will want to keep, put the whole thing in ONE fenced block (```html, ```svg, ")
         append("```markdown, or the code's language). For web pages, use one self-contained HTML file with inline CSS and JS. ")
         append("The app shows such blocks in a viewer with a live preview.\n\n")
+        }
 
         if (webSearch) {
             append("Web search: if the answer needs current or specific facts you are not sure of, reply with ONLY ")
@@ -313,7 +343,11 @@ object Prompt {
             append("Don't search for things you already know well.\n\n")
         }
 
-        if (terminal) {
+        if (terminal && !need("terminal")) {
+            append("Terminal: you can run a shell command on the phone with <run>command</run> as the LAST thing in your reply, ")
+            append("only when the task truly needs it (non-interactive flags, one at a time). Never use it to build APKs or push to GitHub.\n\n")
+        }
+        if (terminal && need("terminal")) {
             append("NEVER use the terminal, git or gradle to build an APK, push to GitHub, or publish a release — that always fails ")
             append("(the GitHub token is not in the terminal). Use the <build> tag for building and pushing; see the Building section.\n")
             append("Terminal: you can run shell commands on the person's phone. Use it ONLY for work that needs it: installing or ")
@@ -343,6 +377,10 @@ object Prompt {
             append("say so plainly rather than pretending.\n\n")
         }
 
+        if (!need("web")) {
+            append("Internet: write <fetch>https://url</fetch> to read a page, <images>what</images> or <videos>what</videos> to show ")
+            append("pictures or videos, as the LAST thing in your reply; the app runs it and sends you the result.\n\n")
+        } else {
         append("Internet: you have full internet access. Write ONE of these as the LAST thing in your reply and stop; the app ")
         append("runs it and sends you the result, then continue: <fetch>https://url</fetch> reads any web page, document, ")
         append("README or API; <download as=\"name.ext\">https://url</download> downloads any file (it is saved for the person ")
@@ -351,13 +389,20 @@ object Prompt {
         append("right in the chat under your reply — use them whenever the person asks to see, show or display something. ")
         append("You can also show a picture you know the address of with ![description](https://…/image.jpg), and a video by ")
         append("putting its YouTube or .mp4 link in your reply; it plays in the chat. Up to $MAX_WEB_STEPS such steps per answer.\n\n")
+        }
 
+        if (need("update")) {
         append("Updating Arin itself: Arin's own source code (Kotlin, Android) is on the person's GitHub and you can change it. ")
         append("When they ask for a feature Arin lacks, report a bug in Arin, or ask you to update or improve the app, end your ")
         append("reply with <update_arin>exactly what to change in Arin and why, in detail</update_arin>. Arin then edits its code ")
         append("(searching the web and downloading files or libraries as needed), builds a new version on GitHub, fixes build ")
         append("errors, and offers to install the update. Agree on the change first if it's unclear.\n\n")
+        } else append("Arin can update its own code with <update_arin>…</update_arin>; full rules are given when the person asks to change Arin.\n\n")
 
+        if (!need("build")) {
+            append("Building apps: Arin can turn a conversation into an Android APK built on GitHub. Never build or send a <build> ")
+            append("tag unless the person orders it; the full build rules are given when they talk about building.\n\n")
+        } else {
         append("Building Android apps: Arin can turn a conversation into a complete Android app (Kotlin, Jetpack Compose, ")
         append("Material 3; also large apps with many screens, a database, networking, camera, media, background work), put ")
         append("the source on the person's GitHub and compile it into an APK, fixing build errors automatically.\n")
@@ -390,6 +435,7 @@ object Prompt {
         append("workflow): don't plan or discuss versions, Gradle files or CI, just describe the app. ")
         append("Never say a build is starting without including the tag. ")
         append("Don't paste whole app sources in chat when they asked for an APK.\n\n")
+        }
 
         if (tools.isNotBlank()) append(tools)
 
@@ -403,6 +449,9 @@ object Prompt {
                 memories.forEach { append("- ").append(it.text).append('\n') }
             }
             append('\n')
+            if (!need("recall")) {
+                append("Past chats: to look something up from an earlier chat, reply with ONLY <recall>a few keywords</recall>.\n")
+            } else {
             append("Past conversations: every chat with the person is saved on this phone and you can read them. ")
             append("When they refer to something from before (\"my app\", \"the error we fixed\", \"what you suggested\", ")
             append("\"continue where we left off\", \"do you remember…\"), or it would help to know what was said earlier, reply with ")
@@ -410,6 +459,7 @@ object Prompt {
             append("The app sends you the matching parts of past chats; then answer from them. Never say you can't remember ")
             append("past chats or that you have no memory before recalling.\n")
             if (pastChats.isNotBlank()) append("Most recent past chats (title, date):\n").append(pastChats).append('\n')
+            }
             append('\n')
         }
 
