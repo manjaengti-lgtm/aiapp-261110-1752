@@ -10,6 +10,16 @@ will see the place you choose.
 - "Natural movement" adds a tiny 1–2 m GPS wobble so a live location looks real
 - Mocks GPS, network and Google fused location (the one WhatsApp uses)
 
+## Travel A → B (moving live location)
+- Open the **Travel A → B** tab, tap **A** and pick the start, tap **B** and pick the destination
+  (map tap, search, or paste coordinates).
+- Choose how to travel: Roads (car), Walking, Cycling (real road routes from OpenStreetMap) or Straight line.
+- Set the speed with the slider, the presets (walk 5, cycle 15, scooter 35, car 60, highway 100 km/h)
+  or tap the km/h value to type an exact speed. Speed can be changed while travelling.
+- Tap **START TRIP**. Your location moves from A to B along the route at that speed; GPS speed and heading
+  are set too. Pause/Resume and Stop any time. On arrival it stays at B.
+- Share WhatsApp live location: the other person sees you moving along the route.
+
 ## One-time setup on the phone
 1. Install the APK and allow location permission.
 2. Settings → About phone → tap **Build number** 7 times to turn on Developer options.

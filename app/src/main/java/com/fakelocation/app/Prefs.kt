@@ -24,6 +24,27 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("drift", true)
         set(v) = sp.edit().putBoolean("drift", v).apply()
 
+    fun getPt(key: String): Pt? {
+        val a = sp.getString("${key}_lat", null)?.toDoubleOrNull() ?: return null
+        val o = sp.getString("${key}_lng", null)?.toDoubleOrNull() ?: return null
+        return Pt(a, o)
+    }
+
+    fun putPt(key: String, p: Pt?) {
+        val e = sp.edit()
+        if (p == null) e.remove("${key}_lat").remove("${key}_lng")
+        else e.putString("${key}_lat", p.lat.toString()).putString("${key}_lng", p.lng.toString())
+        e.apply()
+    }
+
+    var speed: Double
+        get() = sp.getFloat("speed", 40f).toDouble()
+        set(v) = sp.edit().putFloat("speed", v.toFloat()).apply()
+
+    var routeType: RouteType
+        get() = RouteType.entries.getOrElse(sp.getInt("rtype", 0)) { RouteType.ROADS }
+        set(v) = sp.edit().putInt("rtype", v.ordinal).apply()
+
     fun favorites(): List<Place> {
         val arr = JSONArray(sp.getString("favs", "[]"))
         return (0 until arr.length()).map {

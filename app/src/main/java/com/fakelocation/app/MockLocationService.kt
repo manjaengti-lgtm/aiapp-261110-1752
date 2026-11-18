@@ -36,12 +36,32 @@ class MockLocationService : Service() {
         private const val EXTRA_LAT = "lat"
         private const val EXTRA_LNG = "lng"
         private const val EXTRA_DRIFT = "drift"
+        private const val EXTRA_TRAVEL = "travel"
         private const val ACTION_STOP = "com.fakelocation.app.STOP"
         private const val CHANNEL = "fake_location"
         private const val NOTIF_ID = 7
 
         val running = MutableStateFlow(false)
         val error = MutableStateFlow<String?>(null)
+
+        /** Travel mode: live speed (km/h) and pause, changeable while travelling. */
+        val speedKmh = MutableStateFlow(40.0)
+        val paused = MutableStateFlow(false)
+        /** Progress of the current trip, or null when faking a single place. */
+        val trip = MutableStateFlow<TripProgress?>(null)
+
+        @Volatile
+        private var pendingRoute: Route? = null
+
+        fun startTravel(ctx: Context, route: Route, kmh: Double, natural: Boolean) {
+            pendingRoute = route
+            speedKmh.value = kmh
+            paused.value = false
+            val i = Intent(ctx, MockLocationService::class.java)
+                .putExtra(EXTRA_TRAVEL, true)
+                .putExtra(EXTRA_DRIFT, natural)
+            ContextCompat.startForegroundService(ctx, i)
+        }
 
         fun start(ctx: Context, lat: Double, lng: Double, drift: Boolean) {
             val i = Intent(ctx, MockLocationService::class.java)
@@ -64,6 +84,13 @@ class MockLocationService : Service() {
     private var lng = 0.0
     private var drift = true
     private var ready = false
+    private var route: Route? = null
+    private var covered = 0.0
+    private var lastTick = 0L
+    private var speedFactor = 1.0
+    private var tickCount = 0
+    private var curBearing = 0f
+    private var curSpeed = 0f
 
     private val tick = object : Runnable {
         override fun run() {
@@ -88,6 +115,19 @@ class MockLocationService : Service() {
         lat = intent?.getDoubleExtra(EXTRA_LAT, prefs.lastLat) ?: prefs.lastLat
         lng = intent?.getDoubleExtra(EXTRA_LNG, prefs.lastLng) ?: prefs.lastLng
         drift = intent?.getBooleanExtra(EXTRA_DRIFT, prefs.drift) ?: prefs.drift
+        if (intent?.getBooleanExtra(EXTRA_TRAVEL, false) == true && pendingRoute != null) {
+            route = pendingRoute
+            pendingRoute = null
+            covered = 0.0
+            speedFactor = 1.0
+            val start = route!!.pts.first()
+            lat = start.lat; lng = start.lng
+            trip.value = TripProgress(start, 0.0, route!!.length, false)
+        } else {
+            route = null
+            trip.value = null
+        }
+        lastTick = SystemClock.elapsedRealtime()
 
         try {
             ServiceCompat.startForeground(
@@ -154,9 +194,37 @@ class MockLocationService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun push() {
+        val now = SystemClock.elapsedRealtime()
+        val dt = ((now - lastTick) / 1000.0).coerceIn(0.0, 5.0)
+        lastTick = now
+        curBearing = 0f
+        curSpeed = 0f
+        val r = route
+        if (r != null) {
+            var mps = 0.0
+            if (!paused.value && covered < r.length) {
+                var kmh = speedKmh.value
+                if (drift) {
+                    // Real driving/walking speed is never perfectly constant: vary ±10% smoothly.
+                    speedFactor = (speedFactor + (Random.nextDouble() - 0.5) * 0.04).coerceIn(0.9, 1.1)
+                    kmh *= speedFactor
+                }
+                mps = kmh / 3.6
+                covered = (covered + mps * dt).coerceAtMost(r.length)
+            }
+            val (p, br) = r.at(covered)
+            val arrived = covered >= r.length
+            lat = p.lat; lng = p.lng
+            curBearing = br
+            curSpeed = if (arrived) 0f else mps.toFloat()
+            trip.value = TripProgress(p, covered, r.length, arrived)
+            if (tickCount++ % 3 == 0) {
+                getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildNotification())
+            }
+        }
         var la = lat
         var lo = lng
-        if (drift) {
+        if (drift && curSpeed == 0f) {
             // ~1–2 m of natural GPS wobble so a live location looks real.
             la += (Random.nextDouble() - 0.5) * 0.00003
             lo += (Random.nextDouble() - 0.5) * 0.00003
@@ -174,8 +242,8 @@ class MockLocationService : Service() {
         longitude = lo
         altitude = 40.0 + Random.nextDouble() * 2
         accuracy = 3f + Random.nextFloat() * 3f
-        speed = 0f
-        bearing = 0f
+        speed = curSpeed
+        bearing = curBearing
         time = System.currentTimeMillis()
         elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
         if (Build.VERSION.SDK_INT >= 26) {
@@ -197,10 +265,27 @@ class MockLocationService : Service() {
         val stop = PendingIntent.getService(
             this, 1, Intent(this, MockLocationService::class.java).setAction(ACTION_STOP), flags
         )
+        val t = trip.value
+        val title: String
+        val text: String
+        if (route != null && t != null) {
+            title = when {
+                t.arrived -> "Arrived at B"
+                paused.value -> "Trip paused"
+                else -> "Travelling at %.0f km/h".format(speedKmh.value)
+            }
+            val left = t.total - t.covered
+            text = if (t.arrived) "%.5f, %.5f".format(lat, lng)
+            else "${Geo.formatKm(left)} left · about ${Geo.formatTime(left / (speedKmh.value / 3.6))}"
+        } else {
+            title = "Fake location is ON"
+            text = "%.5f, %.5f".format(lat, lng)
+        }
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_pin)
-            .setContentTitle("Fake location is ON")
-            .setContentText("%.5f, %.5f".format(lat, lng))
+            .setContentTitle(title)
+            .setContentText(text)
+            .setOnlyAlertOnce(true)
             .setOngoing(true)
             .setContentIntent(open)
             .addAction(0, "Stop", stop)
@@ -218,7 +303,12 @@ class MockLocationService : Service() {
         try { fused?.setMockMode(false) } catch (_: Exception) { }
         fused = null
         ready = false
+        route = null
+        trip.value = null
+        paused.value = false
         running.value = false
         super.onDestroy()
     }
 }
+
+data class TripProgress(val pos: Pt, val covered: Double, val total: Double, val arrived: Boolean)
