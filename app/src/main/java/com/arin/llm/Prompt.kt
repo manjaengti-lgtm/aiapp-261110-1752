@@ -14,7 +14,7 @@ object Prompt {
     const val MAX_DEEP_SEARCHES = 12
 
     /** Commands one reply may run in the terminal before it has to answer. */
-    const val MAX_COMMANDS = 25
+    const val MAX_COMMANDS = 60
 
     private val imagesTag = Regex("""<images>\s*(.{1,200}?)\s*</images>""", RegexOption.DOT_MATCHES_ALL)
     private val videosTag = Regex("""<videos>\s*(.{1,200}?)\s*</videos>""", RegexOption.DOT_MATCHES_ALL)
@@ -174,6 +174,42 @@ object Prompt {
     fun toolCall(reply: String): Pair<String, String>? =
         toolTag.find(reply)?.let { it.groupValues[1].trim() to it.groupValues[2].trim() } ?: invokedTool(reply)
 
+    private val installTag = Regex("""<install>\s*([\s\S]+?)\s*</install>""")
+    private val writeTag = Regex("""<write\s+path\s*=\s*"([^"]+)"\s*>([\s\S]*?)</write>""")
+    private val readTag = Regex("""<read\s+path\s*=\s*"([^"]+)"(?:\s+from\s*=\s*"?(\d+)"?)?\s*/?>(?:\s*</read>)?|<read>\s*([^<]+?)\s*</read>""")
+    private val editTag = Regex("""<edit\s+path\s*=\s*"([^"]+)"\s*>\s*<old>([\s\S]*?)</old>\s*<new>([\s\S]*?)</new>\s*</edit>""")
+
+    /** File and install actions (Claude Code-style tools) the model can ask the app to do. */
+    sealed class AgentAction {
+        data class Install(val spec: String) : AgentAction()
+        data class Read(val path: String, val from: Int) : AgentAction()
+        data class Write(val path: String, val content: String) : AgentAction()
+        data class Edit(val path: String, val old: String, val new: String) : AgentAction()
+    }
+
+    private fun trimOneNewline(t: String) = t.removePrefix("\r").removePrefix("\n").removeSuffix("\n").removeSuffix("\r")
+
+    /** File content without a Markdown fence the model may have wrapped it in. */
+    private fun unfence(t: String): String {
+        val x = trimOneNewline(t)
+        val m = Regex("""^```[\w.+-]*\n([\s\S]*?)\n?```\s*$""").find(x)
+        return m?.groupValues?.get(1) ?: x
+    }
+
+    /** The first install/read/write/edit action in the reply, if any. */
+    fun agentAction(reply: String): AgentAction? {
+        val found = listOfNotNull(
+            installTag.find(reply)?.let { it.range.first to AgentAction.Install(it.groupValues[1].trim()) },
+            writeTag.find(reply)?.let { it.range.first to AgentAction.Write(it.groupValues[1].trim(), unfence(it.groupValues[2]) + "\n") },
+            readTag.find(reply)?.let { m ->
+                val path = m.groupValues[1].ifBlank { m.groupValues[3] }.trim()
+                m.range.first to AgentAction.Read(path, m.groupValues[2].toIntOrNull() ?: 1)
+            },
+            editTag.find(reply)?.let { it.range.first to AgentAction.Edit(it.groupValues[1].trim(), trimOneNewline(it.groupValues[2]), trimOneNewline(it.groupValues[3])) },
+        )
+        return found.minByOrNull { it.first }?.second
+    }
+
     private val runTag = Regex("""<run>\s*(.+?)\s*</run>""", RegexOption.DOT_MATCHES_ALL)
 
     // Some models (free DeepSeek among them) emit tool calls in a function-call wire format as plain text, e.g.
@@ -245,7 +281,7 @@ object Prompt {
 
     private val topicWords = mapOf(
         "build" to Regex("""\b(build|built|apk|app|apps|compile|github|gradle|kotlin|compose|screen|screens|plan|feature|features|android|try again|retry|repo|codespace|zip)\b""", RegexOption.IGNORE_CASE),
-        "terminal" to Regex("""\b(run|install|command|terminal|shell|bash|linux|file|files|folder|script|code|npm|pip|python|node|git|rea|reverse|decompile|disassemble|binary|apk|jadx|frida|server|port|error|log|debug)\b""", RegexOption.IGNORE_CASE),
+        "terminal" to Regex("""\b(run|install|tool|tools|setup|set up|download|command|terminal|shell|bash|linux|file|files|folder|script|code|program|project|edit|write|read|npm|pip|python|node|git|rea|reverse|decompile|disassemble|binary|apk|jadx|frida|ffmpeg|server|port|error|log|debug|convert|compress)\b""", RegexOption.IGNORE_CASE),
         "update" to Regex("""\b(arin|update|upgrade|bug|crash|this app|your app|new version|feature)\b""", RegexOption.IGNORE_CASE),
         "draw" to Regex("""\b(draw|drawing|picture|image|illustrat\w*|generate|imagine|logo|wallpaper|art|sketch|paint\w*|design)\b""", RegexOption.IGNORE_CASE),
         "web" to Regex("""\b(download|video|videos|image|images|photo|photos|show me|link|url|http|website|page|youtube|fetch|open)\b|https?://""", RegexOption.IGNORE_CASE),
@@ -343,9 +379,16 @@ object Prompt {
             append("Don't search for things you already know well.\n\n")
         }
 
+        if (!terminal) {
+            append("Tools: if a task needs a program, a terminal or files, you can still do it: write <install>tool names</install>, ")
+            append("<run>command</run>, <read path=\"…\"/>, <write path=\"…\">content</write> or <edit path=\"…\"><old>…</old><new>…</new></edit> ")
+            append("as the LAST thing in your reply. The app asks the person first and sets up its Linux if needed.\n\n")
+        }
         if (terminal && !need("terminal")) {
-            append("Terminal: you can run a shell command on the phone with <run>command</run> as the LAST thing in your reply, ")
-            append("only when the task truly needs it (non-interactive flags, one at a time). Never use it to build APKs or push to GitHub.\n\n")
+            append("Terminal: run a shell command on the phone with <run>command</run> as the LAST thing in your reply, only when the ")
+            append("task truly needs it. Install any missing tool yourself with <install>names</install>. Files: <read path=\"…\"/>, ")
+            append("<write path=\"…\">content</write>, <edit path=\"…\"><old>exact text</old><new>new text</new></edit>. ")
+            append("Never use the terminal to build APKs or push to GitHub.\n\n")
         }
         if (terminal && need("terminal")) {
             append("NEVER use the terminal, git or gradle to build an APK, push to GitHub, or publish a release — that always fails ")
@@ -371,6 +414,19 @@ object Prompt {
             append("a choice, something only they can do). ")
             append("Only say something is installed or working after a command's output shows it; check exit codes, and don't ")
             append("hide failures by piping into head or tail without set -o pipefail (the app sets it). ")
+            append("\nInstalling tools: you may install ANY program, library or tool a task needs, yourself, without asking first. ")
+            append("Write <install>name another-name</install>: the app tries the system package manager (apt in Linux, pkg in Termux), ")
+            append("then pip, then npm, and reports what worked. Force one with a prefix: apt:ffmpeg, pip:requests, npm:typescript. ")
+            append("For things not in those (a GitHub release, a Go/Rust tool, a JDK), download and set them up with <run> (curl/wget, ")
+            append("tar, chmod +x, add to PATH) or build from source. Check a tool works (--version) before relying on it.\n")
+            append("Files (prefer these over cat, echo or heredocs): <read path=\"src/main.py\" from=\"1\"/> shows a file with line ")
+            append("numbers (400 lines at a time; from= for more) or lists a folder; <write path=\"src/main.py\">the WHOLE file</write> ")
+            append("creates or replaces a file; <edit path=\"src/main.py\"><old>exact existing text</old><new>replacement</new></edit> ")
+            append("changes one place — <old> must match the file exactly and only once, so read the file first and include a few ")
+            append("surrounding lines. Paths are relative to the home folder unless they start with /. One action per reply, as the ")
+            append("LAST thing in it; the app sends you the result.\n")
+            append("Long tasks: work like Claude Code. Start a multi-step task with a short numbered plan, then do it step by step, ")
+            append("checking each result, and finish with what was done and what the person can do next.\n")
             append("Arin is your MCP client: to use MCP servers such as REA, call their tools with <tool> (when listed below), ")
             append("never by configuring Claude Code or another agent. ")
             append("Things that need a desktop (GUI apps, Ghidra, IDA, Hopper, Frida server without root) may not work on a phone: ")
@@ -547,6 +603,8 @@ object Prompt {
     private fun cleanTags(reply: String): String =
         reply.replace(rememberTag, "").replace(Regex("""<remember>[^<]*$"""), "")
             .replace(runTag, "").replace(openTail("run"), "")
+            .replace(installTag, "").replace(writeTag, "").replace(readTag, "").replace(editTag, "")
+            .replace(openTail("write"), "").replace(openTail("edit"), "").replace(openTail("install"), "")
             .replace(toolTag, "").replace(openTail("tool"), "")
             .replace(searchTagAnywhere, "").replace(Regex("""<search>[^<]*$"""), "")
             .replace(buildTag, "").replace(openTail("build"), "")
@@ -555,7 +613,7 @@ object Prompt {
             .replace(drawTag, "")
             .replace(imagesTag, "").replace(videosTag, "").replace(fetchTag, "").replace(downloadTag, "")
             .replace(Regex("""<(images|videos|fetch|download)\b[\s\S]*$"""), "")
-            .replace(Regex("""</?(run|tool|build|update_arin|images|videos|fetch|download|recall|draw)\b[^>]*>"""), "")
+            .replace(Regex("""</?(run|tool|build|update_arin|images|videos|fetch|download|recall|draw|install|write|read|edit|old|new)\b[^>]*>"""), "")
             .replace(invokeTag, "").replace(dsmlTag, "").replace(dsmlOpen, "")
             .trimEnd()
 }

@@ -462,8 +462,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         approval?.complete(allow)
     }
 
-    private suspend fun askToRun(command: String, tool: Boolean): Boolean {
-        if (!terminalAsk) return true
+    private suspend fun askToRun(command: String, tool: Boolean, force: Boolean = false): Boolean {
+        if (!terminalAsk && !force) return true
         val d = kotlinx.coroutines.CompletableDeferred<Boolean>()
         approval = d
         approvingTool = tool
@@ -1271,17 +1271,50 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         continue
                     }
                     val full = text.toString()
-                    val cmd = if (useTerminal && ran.count { it.kind != "steer" } < Prompt.MAX_COMMANDS) Prompt.command(full) else null
-                    if (cmd != null) {
+                    val underLimit = ran.count { it.kind != "steer" } < Prompt.MAX_COMMANDS
+                    // Install / read / write / edit (Claude Code-style tools), and terminal commands. They work even when
+                    // the terminal is switched off: the person is asked once, and Arin's Linux is set up if it's missing.
+                    val action = if (underLimit) Prompt.agentAction(full) else null
+                    val cmd = if (underLimit && action == null) Prompt.command(full) else null
+                    if (action != null || cmd != null) {
                         liveText = ""
-                        val allowed = askToRun(cmd, tool = false)
+                        val label = when (action) {
+                            is Prompt.AgentAction.Install -> "install " + action.spec
+                            is Prompt.AgentAction.Read -> "read " + action.path + if (action.from > 1) " (from line ${action.from})" else ""
+                            is Prompt.AgentAction.Write -> "write " + action.path + " (${action.content.lines().size} lines)"
+                            is Prompt.AgentAction.Edit -> "edit " + action.path
+                            null -> cmd!!
+                        }
+                        var allowed = true
+                        if (!terminalOn) {
+                            allowed = askToRun("Let Arin use the terminal for this task?\n\n$label", tool = false, force = true)
+                            if (allowed) toggleTerminal(true)
+                        } else if (action !is Prompt.AgentAction.Read) {
+                            allowed = askToRun(if (action is Prompt.AgentAction.Write) label + "\n\n" + action.content.take(1_500) else
+                                if (action is Prompt.AgentAction.Edit) "$label\n\n− ${action.old.take(600)}\n+ ${action.new.take(600)}" else label, tool = false)
+                        }
+                        val shellProblem = if (allowed) com.arin.terminal.AgentTools.ensureShell(app) { status = it } else null
                         val run = if (!allowed) {
-                            com.arin.data.CommandRun(cmd, "The person chose not to run this command.", null, ran = false)
+                            com.arin.data.CommandRun(label, "The person chose not to allow this.", null, ran = false)
+                        } else if (shellProblem != null) {
+                            com.arin.data.CommandRun(label, shellProblem, 1)
                         } else {
-                            status = "Running: " + cmd.lineSequence().first().take(80)
-                            val r = com.arin.terminal.Shell.run(app, cmd)
+                            status = when (action) {
+                                is Prompt.AgentAction.Install -> "Installing " + action.spec.take(60)
+                                is Prompt.AgentAction.Read -> "Reading " + action.path.take(60)
+                                is Prompt.AgentAction.Write -> "Writing " + action.path.take(60)
+                                is Prompt.AgentAction.Edit -> "Editing " + action.path.take(60)
+                                null -> "Running: " + cmd!!.lineSequence().first().take(80)
+                            }
+                            val r = when (action) {
+                                is Prompt.AgentAction.Install -> com.arin.terminal.AgentTools.install(app, action.spec)
+                                is Prompt.AgentAction.Read -> com.arin.terminal.AgentTools.read(app, action.path, action.from)
+                                is Prompt.AgentAction.Write -> com.arin.terminal.AgentTools.write(app, action.path, action.content)
+                                is Prompt.AgentAction.Edit -> com.arin.terminal.AgentTools.edit(app, action.path, action.old, action.new)
+                                null -> com.arin.terminal.Shell.run(app, cmd!!)
+                            }
                             status = null
-                            com.arin.data.CommandRun(cmd, r.forModel(), r.exitCode)
+                            com.arin.data.CommandRun(label, r.forModel(), r.exitCode)
                         }
                         ran += run
                         liveCommands += run
@@ -1291,11 +1324,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         turns += Turn(
                             true,
                             when {
-                                !run.ran -> "I chose not to run that command. Continue without it, or suggest another way."
-                                !failed -> "Command finished (exit code ${run.exitCode ?: "unknown"}). Output:\n```\n${run.output}\n```\n" +
+                                !run.ran -> "I chose not to allow that. Continue without it, or suggest another way."
+                                !failed -> "Done: $label (exit code ${run.exitCode ?: "unknown"}). Output:\n```\n${run.output}\n```\n" +
                                     "Continue the task: run the next command if needed, or answer when you're done."
                                 else -> "Command FAILED (exit code ${run.exitCode ?: "unknown"}). Output:\n```\n${run.output}\n```\n" +
-                                    fixAdvice(failStreak, Prompt.errorQuery(run.output, cmd), sources)
+                                    fixAdvice(failStreak, Prompt.errorQuery(run.output, label), sources)
                             },
                         )
                         continue

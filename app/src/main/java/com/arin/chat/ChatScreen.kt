@@ -151,7 +151,7 @@ fun ChatScreen(
     vm.commandToApprove?.let { cmd ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = {},
-            title = { Text(if (vm.approvingTool) "Allow this tool call?" else "Run this command in Termux?") },
+            title = { Text(if (vm.approvingTool) "Allow this tool call?" else "Allow this on your phone?") },
             text = {
                 Column {
                     Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.small) {
@@ -165,7 +165,7 @@ fun ChatScreen(
                     }
                     Text(
                         if (vm.approvingTool) "A connected MCP server will run it on your phone. Only allow what you're comfortable with."
-                        else "It runs on your phone with Termux's access. Only allow commands you're comfortable with.",
+                        else "Arin runs it in its Linux (or Termux) on your phone: commands, installs and file changes. Only allow what you're comfortable with.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 8.dp),
@@ -175,8 +175,8 @@ fun ChatScreen(
                     }
                 }
             },
-            confirmButton = { androidx.compose.material3.TextButton(onClick = { vm.answerCommand(true) }) { Text("Run") } },
-            dismissButton = { androidx.compose.material3.TextButton(onClick = { vm.answerCommand(false) }) { Text("Don't run") } },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { vm.answerCommand(true) }) { Text("Allow") } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { vm.answerCommand(false) }) { Text("Don't allow") } },
         )
     }
 
