@@ -298,21 +298,118 @@ fun LiveReply(
 /** The steps a chat reply took (commands, installs, file reads/writes/edits, tool calls), for the Summary sheet. */
 fun chatSteps(runs: List<com.arin.data.CommandRun>, finished: Boolean, failed: Boolean = false): List<Pair<String, com.arin.builder.BuildEvent.Kind>> {
     val out = runs.map { r ->
-        val first = r.command.lineSequence().first().trim().take(200)
+        val label = r.command.lineSequence().first().trim()
         when {
-            r.kind == "steer" -> "You: $first" to StepKind.THINKING
-            !r.ran -> "Not allowed: $first" to StepKind.ERROR
-            r.exitCode != null && r.exitCode != 0 -> "Failed: $first (exit ${r.exitCode})" to StepKind.ERROR
-            first.startsWith("install ") -> "Installed " + first.removePrefix("install ") to StepKind.LIBRARY
-            first.startsWith("write ") -> "Wrote " + first.removePrefix("write ") to StepKind.FILE
-            first.startsWith("edit ") -> "Edited " + first.removePrefix("edit ") to StepKind.FILE
-            first.startsWith("read ") -> "Read " + first.removePrefix("read ") to StepKind.STEP
-            first.startsWith("fetch ") || first.startsWith("download ") || first.startsWith("pictures: ") || first.startsWith("videos: ") -> first to StepKind.WEB
-            r.kind == "tool" -> "Tool: $first" to StepKind.STEP
-            else -> "Ran: $first" to StepKind.BUILD
+            r.kind == "steer" -> "You said: ${label.take(160)}" to StepKind.THINKING
+            !r.ran -> "Skipped (you didn't allow it)" to StepKind.ERROR
+            r.exitCode != null && r.exitCode != 0 -> (plainStep(r, label).first + " — didn't work") to StepKind.ERROR
+            label.startsWith("install ") -> "Installing ${label.removePrefix("install ")}" to StepKind.LIBRARY
+            label.startsWith("write ") -> "Writing ${filePart(label.removePrefix("write "))}" to StepKind.FILE
+            label.startsWith("edit ") -> "Editing ${filePart(label.removePrefix("edit "))}" to StepKind.FILE
+            label.startsWith("read ") -> "Reading ${filePart(label.removePrefix("read "))}" to StepKind.STEP
+            label.startsWith("fetch ") -> "Reading a web page" to StepKind.WEB
+            label.startsWith("download ") -> "Downloading ${label.removePrefix("download ")}" to StepKind.WEB
+            label.startsWith("pictures: ") -> "Finding pictures: ${label.removePrefix("pictures: ")}" to StepKind.WEB
+            label.startsWith("videos: ") -> "Finding videos: ${label.removePrefix("videos: ")}" to StepKind.WEB
+            r.kind == "tool" -> plainTool(label)
+            else -> plainStep(r, label)
         }
     }
     return if (finished) out + ((if (failed) "Stopped with an error" else "Done — the answer is in the chat") to (if (failed) StepKind.ERROR else StepKind.DONE)) else out
+}
+
+/** Short file name from a path (keeps the last folder for context). */
+private fun filePart(path: String): String {
+    val p = path.trim().trim('"', '\'').substringBefore(' ')
+    val parts = p.trimEnd('/').split('/').filter { it.isNotEmpty() }
+    return parts.takeLast(2).joinToString("/").ifBlank { p }
+}
+
+/** An MCP tool call in plain words (tool names like open_binary → "Open binary"). */
+private fun plainTool(label: String): Pair<String, StepKind> {
+    if (label.startsWith("find_tools")) return "Looking up the right tool" to StepKind.STEP
+    if (label.startsWith("recall:")) return "Remembering an earlier chat" to StepKind.STEP
+    val name = label.substringBefore(' ').substringAfterLast('.').replace('_', ' ')
+        .replaceFirstChar { it.uppercase() }
+    return name to StepKind.STEP
+}
+
+/**
+ * Turns a shell command into a plain-English sentence for the Summary, so the person reads what Arin is doing
+ * instead of raw code. Reads the meaningful part of a compound command (after cd … &&, before the first pipe).
+ */
+fun plainStep(r: com.arin.data.CommandRun, labelIn: String): Pair<String, StepKind> {
+    var c = labelIn.trim()
+    // Drop a leading "cd <path> &&" or "cd <path>;" — it just sets the folder.
+    Regex("""^cd\s+\S+\s*(&&|;)\s*""").find(c)?.let { c = c.removeRange(it.range) }
+    // The first real action in a chain (skip echo/cd/mkdir/rm-temp noise when something better follows).
+    val parts = c.split(Regex("""\s*(&&|;)\s*""")).map { it.trim() }.filter { it.isNotEmpty() }
+    val main = parts.firstOrNull { p ->
+        val w = p.substringBefore(' ')
+        w !in setOf("echo", "cd", "true", "false", "set", "export") &&
+            !(w == "mkdir") && !(w == "rm" && (p.contains("/tmp") || p.contains("-rf")))
+    } ?: parts.firstOrNull() ?: c
+    val head = main.substringBefore('|').trim()
+    val word = head.substringBefore(' ').substringAfterLast('/')
+    val rest = head.substringAfter(' ', "")
+    fun arg() = rest.split(' ').lastOrNull { it.isNotBlank() && !it.startsWith('-') }?.let { filePart(it) }.orEmpty()
+    val text = when (word) {
+        "python3", "python", "python2" -> "Running a Python script"
+        "node", "nodejs" -> "Running a script"
+        "bash", "sh" -> "Running a script"
+        "javac" -> "Compiling Java code"
+        "java" -> "Running a Java tool"
+        "kotlinc" -> "Compiling Kotlin code"
+        "gcc", "g++", "cc", "make", "cmake" -> "Compiling code"
+        "pip", "pip3" -> if (rest.contains("install")) "Installing a Python package" else "Using pip"
+        "npm", "npx", "yarn", "pnpm" -> if (rest.contains("install") || rest.contains("i ")) "Installing a package" else "Running a Node tool"
+        "apt", "apt-get", "pkg", "dpkg" -> if (rest.contains("install")) "Installing a tool" else "Updating the package list"
+        "curl", "wget" -> "Downloading from the web"
+        "git" -> when {
+            rest.startsWith("clone") -> "Downloading a code repository"
+            rest.startsWith("pull") -> "Updating a repository"
+            rest.startsWith("commit") -> "Saving changes"
+            rest.startsWith("push") -> "Uploading changes"
+            else -> "Using git"
+        }
+        "grep", "rg", "egrep", "fgrep", "ag" -> {
+            val inFile = rest.split(' ').lastOrNull { it.isNotBlank() && !it.startsWith('-') && !it.startsWith('"') }?.let { filePart(it) }
+            val pat = Regex(""""([^"]{1,40})"""").find(rest)?.groupValues?.get(1)
+            when {
+                pat != null && inFile != null -> "Searching $inFile for \"$pat\""
+                inFile != null -> "Searching $inFile"
+                else -> "Searching for text"
+            }
+        }
+        "ls", "find", "tree", "stat", "du", "wc" -> "Listing files" + (arg().takeIf { it.isNotEmpty() }?.let { " in $it" } ?: "")
+        "cat", "head", "tail", "less", "nl", "sed", "awk", "jq" -> "Reading ${arg().ifBlank { "a file" }}"
+        "cp" -> "Copying files"
+        "mv" -> "Moving files"
+        "rm" -> "Removing files"
+        "mkdir" -> "Making a folder"
+        "chmod", "chown" -> "Setting file permissions"
+        "unzip", "jar", "tar", "7z", "unrar", "gzip", "gunzip" -> "Extracting files"
+        "zip" -> "Packing files into an archive"
+        "strings" -> "Scanning a file for text"
+        "aapt", "aapt2" -> "Reading the app's details"
+        "apktool" -> if (rest.trimStart().startsWith("b")) "Rebuilding the app" else "Unpacking the app"
+        "keytool" -> "Making a signing key"
+        "jarsigner", "apksigner" -> "Signing the app"
+        "d2j-dex2jar", "dex2jar", "baksmali", "smali", "jadx", "d2j" -> "Reading the app's code"
+        "adb" -> "Talking to a device over ADB"
+        "ffmpeg", "ffprobe" -> "Converting media"
+        "echo", "printf" -> "Writing a note"
+        "" -> "Working"
+        else -> "Running $word"
+    }
+    val kind = when (word) {
+        "javac", "java", "kotlinc", "gcc", "g++", "cc", "make", "cmake", "apktool", "jarsigner", "apksigner", "keytool" -> StepKind.BUILD
+        "pip", "pip3", "npm", "npx", "yarn", "apt", "apt-get", "pkg" -> StepKind.LIBRARY
+        "curl", "wget", "git" -> StepKind.WEB
+        "unzip", "tar", "zip", "jar", "7z" -> StepKind.DOWNLOAD
+        else -> StepKind.STEP
+    }
+    return text to kind
 }
 
 /** The model's reasoning: open while it streams, then folded to "Reasoned for N s" (tap to open). */
