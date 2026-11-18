@@ -73,6 +73,19 @@ class Prefs(ctx: Context) {
 /** Place search using OpenStreetMap Nominatim (free, no key). Call off the main thread. */
 object PlaceSearch {
     fun search(query: String): List<Place> {
+        var last: Exception? = null
+        repeat(2) {
+            try {
+                return nominatim(query)
+            } catch (e: Exception) {
+                last = e
+                Thread.sleep(1200) // Nominatim allows ~1 request per second
+            }
+        }
+        throw last ?: Exception("Search failed")
+    }
+
+    private fun nominatim(query: String): List<Place> {
         val url = URL(
             "https://nominatim.openstreetmap.org/search?format=json&limit=15&q=" +
                 URLEncoder.encode(query, "UTF-8")
@@ -85,10 +98,12 @@ object PlaceSearch {
         try {
             val text = conn.inputStream.bufferedReader().use { it.readText() }
             val arr = JSONArray(text)
-            return (0 until arr.length()).map {
-                val o = arr.getJSONObject(it)
-                Place(o.getString("display_name"), o.getString("lat").toDouble(), o.getString("lon").toDouble())
-            }
+            return (0 until arr.length()).mapNotNull {
+                val o = arr.optJSONObject(it) ?: return@mapNotNull null
+                val la = o.optString("lat").toDoubleOrNull() ?: return@mapNotNull null
+                val lo = o.optString("lon").toDoubleOrNull() ?: return@mapNotNull null
+                Place(o.optString("display_name", "%.5f, %.5f".format(la, lo)), la, lo)
+            }.distinctBy { "%.4f,%.4f".format(it.lat, it.lng) }
         } finally {
             conn.disconnect()
         }

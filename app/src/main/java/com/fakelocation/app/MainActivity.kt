@@ -66,6 +66,14 @@ import org.osmdroid.tileprovider.MapTileProviderBasic
 import org.osmdroid.util.BoundingBox
 import java.io.File
 import kotlin.math.roundToInt
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.ln
+import kotlin.math.log2
+import kotlin.math.min
+import kotlin.math.tan
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 
 private val SPEED_PRESETS = listOf(
     "🚶" to 5, "🚲" to 15, "🛵" to 35, "🚗" to 60, "🛣️" to 100
@@ -83,6 +91,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installCrashCatcher()
         Configuration.getInstance().apply {
             userAgentValue = packageName
             osmdroidBasePath = File(cacheDir, "osmdroid")
@@ -106,6 +115,24 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         mapRef?.onPause()
         super.onPause()
+    }
+
+    private val crashFile get() = File(filesDir, "last_crash.txt")
+
+    /** Saves any crash so it can be shown (and copied) the next time the app opens. */
+    private fun installCrashCatcher() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        val file = crashFile
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try {
+                file.writeText(
+                    "Fake Location crash (Android ${Build.VERSION.RELEASE}, ${Build.MANUFACTURER} ${Build.MODEL})\n" +
+                        android.util.Log.getStackTraceString(e)
+                )
+            } catch (_: Exception) {
+            }
+            previous?.uncaughtException(t, e)
+        }
     }
 
     private fun askPermissions() {
@@ -189,15 +216,36 @@ class MainActivity : ComponentActivity() {
         mv.invalidate()
     }
 
+    /**
+     * Shows all [pts] on the map. Works out the zoom by itself and guards against a tiny map
+     * (e.g. while the keyboard is still open), which used to give an invalid zoom and freeze the app.
+     */
     private fun fit(mv: MapView?, pts: List<Pt>) {
         if (mv == null || pts.isEmpty()) return
-        if (pts.size == 1 || pts.all { it == pts[0] }) {
-            mv.controller.setZoom(16.0)
-            mv.controller.animateTo(GeoPoint(pts[0].lat, pts[0].lng))
-            return
-        }
-        val box = BoundingBox.fromGeoPoints(pts.map { GeoPoint(it.lat, it.lng) })
-        mv.post { mv.zoomToBoundingBox(box, true, 140) }
+        mv.postDelayed({
+            try {
+                val minLat = pts.minOf { it.lat }.coerceIn(-85.0, 85.0)
+                val maxLat = pts.maxOf { it.lat }.coerceIn(-85.0, 85.0)
+                val minLng = pts.minOf { it.lng }
+                val maxLng = pts.maxOf { it.lng }
+                val w = mv.width.toDouble()
+                val h = mv.height.toDouble()
+                var zoom = 16.0
+                val lngSpan = maxLng - minLng
+                fun merc(l: Double) = ln(tan(PI / 4 + Math.toRadians(l) / 2))
+                val ySpan = abs(merc(maxLat) - merc(minLat))
+                if (w > 80 && h > 80 && (lngSpan > 1e-6 || ySpan > 1e-6)) {
+                    val tile = 256.0 * mv.resources.displayMetrics.density
+                    val zx = if (lngSpan > 1e-9) log2(w * 0.75 / tile * 360.0 / lngSpan) else 18.0
+                    val zy = if (ySpan > 1e-9) log2(h * 0.75 / tile * 2 * PI / ySpan) else 18.0
+                    zoom = min(zx, zy)
+                }
+                if (zoom.isNaN() || zoom.isInfinite()) zoom = 15.0
+                mv.controller.setZoom(zoom.coerceIn(3.0, 17.0))
+                mv.controller.setCenter(GeoPoint((minLat + maxLat) / 2, (minLng + maxLng) / 2))
+            } catch (_: Exception) {
+            }
+        }, 400)
     }
 
     @Composable
@@ -251,6 +299,9 @@ class MainActivity : ComponentActivity() {
         val keyboard = LocalSoftwareKeyboardController.current
         val ready = hasPerm.value && mockOn.value
         val travelling = running && trip != null
+        var crash by remember {
+            mutableStateOf(try { crashFile.takeIf { it.exists() }?.readText() } catch (_: Exception) { null })
+        }
 
         LaunchedEffect(Unit) {
             if (!MockLocationService.running.value) MockLocationService.speedKmh.value = prefs.speed
@@ -454,7 +505,7 @@ class MainActivity : ComponentActivity() {
                         },
                         update = { mv ->
                             val l = layers
-                            if (l != null) {
+                            if (l != null) try {
                                 l.single.isEnabled = mode == 0
                                 l.single.position = GeoPoint(lat, lng)
                                 val a = pointA
@@ -499,6 +550,7 @@ class MainActivity : ComponentActivity() {
                                     l.shownResults = res
                                 }
                                 mv.invalidate()
+                            } catch (_: Exception) {
                             }
                         }
                     )
@@ -813,6 +865,29 @@ class MainActivity : ComponentActivity() {
         }
 
         // ---------------- Dialogs ----------------
+
+        crash?.let { text ->
+            val clipboard = LocalClipboardManager.current
+            AlertDialog(
+                onDismissRequest = { crashFile.delete(); crash = null },
+                title = { Text("The app closed last time") },
+                text = {
+                    Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
+                        Text("Copy this and send it to the developer:", fontSize = 13.sp)
+                        Spacer(Modifier.height(6.dp))
+                        Text(text, fontSize = 10.sp)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        clipboard.setText(AnnotatedString(text))
+                        toast("Copied")
+                        crashFile.delete(); crash = null
+                    }) { Text("Copy") }
+                },
+                dismissButton = { TextButton(onClick = { crashFile.delete(); crash = null }) { Text("Close") } }
+            )
+        }
 
         tapPoint?.let { p ->
             AlertDialog(
