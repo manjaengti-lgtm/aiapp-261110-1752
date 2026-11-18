@@ -59,6 +59,8 @@ data class Message(
     val media: List<MediaItem> = emptyList(),
     /** A build the model prepared but the person hasn't ordered yet: "name\u0000specification" (or "update\u0000change"). */
     val pendingBuild: String = "",
+    /** The reply was cut off (Arin closed or crashed, or the network dropped): it can be resumed or started over. */
+    val interrupted: Boolean = false,
 )
 
 @Serializable

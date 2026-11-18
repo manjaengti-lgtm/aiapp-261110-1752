@@ -451,6 +451,8 @@ private fun Conversation(vm: ChatViewModel, onEdit: (Int) -> Unit) {
                         m.commands.any { it.kind != "steer" } -> ({ stepsFor = m.id })
                         else -> null
                     },
+                    onResume = if (m.interrupted && i == vm.messages.lastIndex && !vm.streaming) vm::resumeInterrupted else null,
+                    onStartOver = if (m.interrupted && i == vm.messages.lastIndex && !vm.streaming) vm::startOverInterrupted else null,
                     // Only the newest reply can be built from, so an old plan never starts by accident.
                     onConfirmBuild = if (i == vm.messages.lastIndex && !vm.streaming) ({ t: com.arin.chat.BuildTarget -> vm.confirmBuildAt(m, t) }) else null,
                 )

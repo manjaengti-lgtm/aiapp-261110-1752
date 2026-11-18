@@ -1174,6 +1174,38 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         job?.cancel()
     }
 
+    private var checkpointJob: Job? = null
+
+    /** Writes the chat to disk with the reply-so-far as a resumable (interrupted) message. */
+    private suspend fun saveCheckpoint(text: String, steps: List<com.arin.data.CommandRun>, thinkingSoFar: String) {
+        if (temporary || messages.isEmpty()) return
+        val id = chatId ?: return
+        val partial = Message(
+            fromUser = false,
+            text = text.ifBlank { "Working…" } + "\n\n⚠️ **Arin stopped here** (closed, crashed or lost connection). " +
+                "Tap **Resume** to carry on from the last step, or **Start over**.",
+            thinking = thinkingSoFar,
+            commands = steps,
+            interrupted = true,
+        )
+        val chat = Chat(id = id, title = title, updated = System.currentTimeMillis(), messages = messages.toList() + partial,
+            projectId = chatProject?.id, pinned = chatPinned, reaOn = reaOn)
+        withContext(Dispatchers.IO) { if (streaming) runCatching { store.save(chat) } }
+    }
+
+    /** Carries on an interrupted reply from its last completed step (the steps done are sent to the model). */
+    fun resumeInterrupted() {
+        if (streaming) return
+        send("Resume the task from exactly where it stopped. The steps already completed are listed in your last reply — " +
+            "don't redo them (check the current state quickly if you need to), then continue to the end.")
+    }
+
+    /** Throws away an interrupted reply and runs the request again from the beginning. */
+    fun startOverInterrupted() {
+        if (streaming) return
+        retry()
+    }
+
     private fun reply() {
         val history = messages.filterNot { it.failed }
         val p = provider
@@ -1219,6 +1251,19 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             var failure: String? = null
             try {
                 val turns = Attachments.toTurns(p, history, projectMedia(project)).toMutableList()
+                // Save progress every few seconds, so a crash or a killed app leaves a reply that can be resumed.
+                checkpointJob?.cancel()
+                checkpointJob = launch {
+                    var lastSig = ""
+                    while (true) {
+                        kotlinx.coroutines.delay(3_000)
+                        val sig = "${liveCommands.size}:${liveText.length / 300}"
+                        if (sig != lastSig && (liveCommands.any { it.kind != "steer" } || liveText.length > 300)) {
+                            lastSig = sig
+                            saveCheckpoint(Prompt.clean(liveText), liveCommands.toList(), thinking.toString())
+                        }
+                    }
+                }
                 if (servers.isNotEmpty()) {
                     status = "Connecting to tools…"
                     val problems = com.arin.mcp.Mcp.connectAll(app, servers, canStart = useTerminal)
@@ -1350,11 +1395,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                             } catch (e: Throwable) {
                                 // Free models sometimes send an incomplete or invalid reply the gateway drops: retry a
                                 // couple of times, continuing from the partial text so nothing already written is lost.
-                                if (streamRetries < 2 && Prompt.isRetryable(e.message)) {
+                                // A dropped connection: wait and reconnect (up to ~2 minutes) instead of failing the task.
+                                val network = e is java.io.IOException || Prompt.isRetryable(e.message)
+                                val maxTries = if (e is java.io.IOException) 7 else 2
+                                if (streamRetries < maxTries && network) {
                                     streamRetries++
-                                    status = if (text.isEmpty()) "The model hiccuped — retrying…"
-                                        else "The model's reply cut off — continuing from where it stopped…"
-                                    kotlinx.coroutines.delay(800)
+                                    val wait = if (e is java.io.IOException) listOf(3, 5, 10, 15, 20, 30, 30)[streamRetries - 1] else 1
+                                    for (left in wait downTo 1) {
+                                        status = if (e is java.io.IOException) "Connection lost — reconnecting in ${left}s (try $streamRetries of $maxTries). Your progress is kept."
+                                            else if (text.isEmpty()) "The model hiccuped — retrying…"
+                                            else "The model's reply cut off — continuing from where it stopped…"
+                                        kotlinx.coroutines.delay(1_000)
+                                    }
                                     status = null
                                     continue
                                 }
@@ -1634,6 +1686,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 failure = e.message ?: "Something went wrong."
                 com.arin.CrashLog.note(getApplication(), "Reply failed", "${p.label} · $m: ${failure}", e.stackTraceToString().take(4_000))
             } finally {
+                checkpointJob?.cancel()
+                checkpointJob = null
                 val seconds = if (thinkStart > 0) ((System.currentTimeMillis() - thinkStart) / 1000).toInt() else 0
                 if (memoryFlag) Prompt.memories(answer).forEach { remember(it) }
                 // The model asked to change Arin itself: start a self-update build.
@@ -1673,8 +1727,22 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 foundMedia += com.arin.media.MediaSearch.linked(answer).filter { l -> foundMedia.none { it.url == l.url } }
                 foundMedia += Prompt.drawings(answer).filter { d -> foundMedia.none { it.url == d.url } }
                 val shown = com.arin.media.MediaSearch.withoutImages(Prompt.clean(answer)) + buildNote
-                val msg = if (failure != null && shown.isBlank()) {
+                val didWork = ran.any { it.kind != "steer" }
+                val msg = if (failure != null && shown.isBlank() && !didWork) {
                     Message(fromUser = false, text = failure!!, failed = true)
+                } else if (failure != null) {
+                    // Cut off mid-task: keep everything done so far, and offer Resume / Start over.
+                    Message(
+                        fromUser = false,
+                        text = shown.ifBlank { "Did ${ran.count { it.kind != "steer" }} step(s) before stopping." } +
+                            "\n\n⚠️ **Stopped:** ${failure!!.take(300)}",
+                        thinking = thinking.toString(),
+                        thoughtSeconds = seconds,
+                        sources = sources,
+                        commands = ran.toList(),
+                        media = foundMedia.toList(),
+                        interrupted = true,
+                    )
                 } else {
                     if (failure != null) notice = failure
                     Message(

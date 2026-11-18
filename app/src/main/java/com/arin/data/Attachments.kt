@@ -376,7 +376,24 @@ object Attachments {
             val budgets = shareBudget(textFiles.map { it.second }, textBudget(provider))
 
             val turns = messages.mapIndexed { i, m ->
-                if (!m.fromUser) return@mapIndexed Turn(false, m.text)
+                if (!m.fromUser) {
+                    val steps = m.commands.filter { it.kind != "steer" }
+                    if (steps.isEmpty()) return@mapIndexed Turn(false, m.text)
+                    // What this reply already did (installs, files, commands), so a later "continue" doesn't redo it.
+                    val log = buildString {
+                        append("[Steps this reply already completed — they took effect and stay done:\n")
+                        var budget = 6_000
+                        steps.takeLast(40).forEach { c ->
+                            if (budget <= 0) return@forEach
+                            val status = when { !c.ran -> "not allowed"; c.exitCode == 0 -> "ok"; c.exitCode == null -> "done"; else -> "FAILED (exit ${c.exitCode})" }
+                            val line = "- ${c.command.lineSequence().first().take(200)} → $status" +
+                                (c.output.trim().takeIf { it.isNotEmpty() }?.let { o -> ": " + o.takeLast(160).replace('\n', ' ') } ?: "")
+                            append(line).append('\n'); budget -= line.length
+                        }
+                        append("]\n\n")
+                    }
+                    return@mapIndexed Turn(false, log + m.text)
+                }
                 val sendMedia = i in mediaIndices
                 val asText = m.attachments.filter { a -> a.hasText && !(sendMedia && sendsNatively(provider, a)) }
                 val media = m.attachments.filter { sendsNatively(provider, it) }

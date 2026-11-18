@@ -43,7 +43,7 @@ object Prompt {
 
     /** A change to Arin itself the reply asks for. */
     private val retryableError = Regex(
-        """(?i)incomplete|invalid response|discard|truncat|malformed|empty (response|reply)|no response|unexpected end|connection reset|reset by peer|disconnect|stream (closed|ended)|read timeout|timed out|bad gateway|502|503|504|overloaded|upstream""",
+        """(?i)incomplete|invalid response|discard|truncat|malformed|empty (response|reply)|no response|unexpected end|connection reset|reset by peer|disconnect|stream (closed|ended)|read timeout|timed out|bad gateway|502|503|504|overloaded|upstream|unable to resolve host|failed to connect|network is unreachable|connection abort|connection refused|no address associated|socket|broken pipe|unexpected end of stream""",
     )
     private val notRetryable = Regex(
         """(?i)key was rejected|not available to this account|isn'?t available|check it in settings|pick another model|add your|require|link an? .*github""",
@@ -418,7 +418,9 @@ object Prompt {
             append("Write <install>name another-name</install>: the app tries the system package manager (apt in Linux, pkg in Termux), ")
             append("then pip, then npm, and reports what worked. Force one with a prefix: apt:ffmpeg, pip:requests, npm:typescript. ")
             append("For things not in those (a GitHub release, a Go/Rust tool, a JDK), download and set them up with <run> (curl/wget, ")
-            append("tar, chmod +x, add to PATH) or build from source. Check a tool works (--version) before relying on it.\n")
+            append("tar, chmod +x, add to PATH) or build from source. Check a tool works (--version) before relying on it. ")
+            append("Everything installed or written earlier stays on the phone: when continuing a task, check first ")
+            append("(command -v, ls, --version) and skip what's already done instead of reinstalling or rewriting it.\n")
             append("Files (prefer these over cat, echo or heredocs): <read path=\"src/main.py\" from=\"1\"/> shows a file with line ")
             append("numbers (400 lines at a time; from= for more) or lists a folder; <write path=\"src/main.py\">the WHOLE file</write> ")
             append("creates or replaces a file; <edit path=\"src/main.py\"><old>exact existing text</old><new>replacement</new></edit> ")

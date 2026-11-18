@@ -97,6 +97,9 @@ fun ArinMessage(
     isLast: Boolean,
     onRetry: () -> Unit,
     onSummary: (() -> Unit)? = null,
+    /** Set on a reply that was cut off (crash, closed app, lost connection): Resume / Start over buttons. */
+    onResume: (() -> Unit)? = null,
+    onStartOver: (() -> Unit)? = null,
     onConfirmBuild: ((BuildTarget) -> Unit)? = null,
 ) {
     val clipboard = LocalClipboardManager.current
@@ -139,6 +142,12 @@ fun ArinMessage(
                     }
                 } else {
                     BuildWhere(onConfirmBuild)
+                }
+            }
+            if (onResume != null || onStartOver != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                    if (onResume != null) androidx.compose.material3.Button(onClick = onResume) { Text("Resume") }
+                    if (onStartOver != null) androidx.compose.material3.OutlinedButton(onClick = onStartOver) { Text("Start over") }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
