@@ -35,6 +35,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /** Everything the chat, the chats list, projects and Settings share. One instance for the whole app. */
@@ -67,15 +68,40 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var editing by mutableStateOf<Int?>(null)
         private set
 
-    var streaming by mutableStateOf(false)
-        private set
-    var liveText by mutableStateOf("")
-        private set
-    var liveThinking by mutableStateOf("")
-        private set
+    /**
+     * A reply being worked on in one chat: its live text, thinking, status, steps and steering messages. Each chat
+     * has its own, so several chats can think, code and run commands at the same time; switching chats doesn't stop them.
+     */
+    inner class Run(val chat: String, val chatTitle: String, val base: List<Message>) {
+        var liveText by mutableStateOf("")
+        var liveThinking by mutableStateOf("")
+        var status by mutableStateOf<String?>(null)
+        val liveCommands = mutableStateListOf<com.arin.data.CommandRun>()
+        val steering = mutableStateListOf<String>()
+        @Volatile var steerPending = false
+        var job: Job? = null
+        var checkpointJob: Job? = null
+    }
+
+    /** Replies running now, by chat id (a temporary chat uses [TEMP_CHAT]). */
+    val runs = androidx.compose.runtime.mutableStateMapOf<String, Run>()
+
+    private fun chatKey(): String = chatId ?: TEMP_CHAT
+
+    /** The open chat's running reply, if any. */
+    fun runFor(key: String? = chatKey()): Run? = key?.let { runs[it] }
+
+    /** True while the OPEN chat is working (other chats may be working too). */
+    val streaming: Boolean get() = runFor() != null
+    val liveText: String get() = runFor()?.liveText.orEmpty()
+    val liveThinking: String get() = runFor()?.liveThinking.orEmpty()
+
+    /** Status outside any reply (e.g. loading a model); a running reply's own status takes precedence. */
+    private var idleStatus by mutableStateOf<String?>(null)
     /** What Arin is doing right now when it isn't writing, such as "Searching the web for …". */
-    var status by mutableStateOf<String?>(null)
-        private set
+    var status: String?
+        get() = runFor()?.status ?: idleStatus
+        private set(value) { idleStatus = value }
     var notice by mutableStateOf<String?>(null)
 
     /** Details of the last crash, shown once when Arin opens again. */
@@ -86,8 +112,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Set when a reply finishes; voice mode reads it aloud. */
     var lastFinished by mutableStateOf<Message?>(null)
         private set
-
-    private var job: Job? = null
 
     // ---- Chats and projects ----
     val chats = mutableStateListOf<ChatSummary>()
@@ -214,8 +238,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var terminalAsk by mutableStateOf(settings.terminalAsk)
         private set
 
-    /** Commands run so far in the reply being written (shown live). */
-    val liveCommands = mutableStateListOf<com.arin.data.CommandRun>()
+    private val noCommands = mutableStateListOf<com.arin.data.CommandRun>()
+    /** Commands run so far in the open chat's reply (shown live). */
+    val liveCommands: List<com.arin.data.CommandRun> get() = runFor()?.liveCommands ?: noCommands
 
     /** A command or tool call waiting for the person to allow or refuse it. */
     var commandToApprove by mutableStateOf<String?>(null)
@@ -462,17 +487,25 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         approval?.complete(allow)
     }
 
-    private suspend fun askToRun(command: String, tool: Boolean, force: Boolean = false): Boolean {
+    /** Several chats can work at once: their approval requests take turns, one dialog at a time. */
+    private val approvalLock = kotlinx.coroutines.sync.Mutex()
+
+    private suspend fun askToRun(command: String, tool: Boolean, force: Boolean = false, fromChat: String? = null): Boolean {
         if (!terminalAsk && !force) return true
-        val d = kotlinx.coroutines.CompletableDeferred<Boolean>()
-        approval = d
-        approvingTool = tool
-        commandToApprove = command
-        try {
-            return d.await()
-        } finally {
-            commandToApprove = null
-            approval = null
+        return approvalLock.withLock {
+            val d = kotlinx.coroutines.CompletableDeferred<Boolean>()
+            approval = d
+            approvingTool = tool
+            val label = fromChat?.takeIf { it != chatKey() }?.let { id ->
+                (runs[id]?.chatTitle ?: chats.firstOrNull { it.id == id }?.title)?.let { "From the chat \"$it\":\n\n" }
+            }.orEmpty()
+            commandToApprove = label + command
+            try {
+                d.await()
+            } finally {
+                commandToApprove = null
+                approval = null
+            }
         }
     }
 
@@ -1104,28 +1137,29 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Steering: messages sent while a reply is running ----
 
-    /** Messages waiting to be given to the model at its next step. */
-    val steering = mutableStateListOf<String>()
+    private val noSteering = mutableStateListOf<String>()
+    /** Messages waiting to be given to the open chat's model at its next step. */
+    val steering: List<String> get() = runFor()?.steering ?: noSteering
 
-    @Volatile private var steerPending = false
-
-    /** Adds a message for the running reply; the model sees it at its next step (or right away, if it's writing). */
+    /** Adds a message for the open chat's running reply; the model sees it at its next step (or right away, if it's writing). */
     fun steer(text: String) {
         val t = text.trim()
+        val r = runFor() ?: return
         if (t.isEmpty()) return
-        steering += t
-        steerPending = true
+        r.steering += t
+        r.steerPending = true
     }
 
     fun removeSteer(index: Int) {
-        if (index in steering.indices) steering.removeAt(index)
-        steerPending = steering.isNotEmpty()
+        val r = runFor() ?: return
+        if (index in r.steering.indices) r.steering.removeAt(index)
+        r.steerPending = r.steering.isNotEmpty()
     }
 
-    private suspend fun takeSteering(): List<String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-        val list = steering.toList()
-        steering.clear()
-        steerPending = false
+    private suspend fun takeSteering(r: Run): List<String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+        val list = r.steering.toList()
+        r.steering.clear()
+        r.steerPending = false
         list
     }
 
@@ -1175,16 +1209,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         reply()
     }
 
+    /** Stops the open chat's reply (other chats keep working). */
     fun stop() {
-        job?.cancel()
+        runFor()?.job?.cancel()
     }
 
-    private var checkpointJob: Job? = null
-
-    /** Writes the chat to disk with the reply-so-far as a resumable (interrupted) message. */
-    private suspend fun saveCheckpoint(text: String, steps: List<com.arin.data.CommandRun>, thinkingSoFar: String) {
-        if (temporary || messages.isEmpty()) return
-        val id = chatId ?: return
+    /** Writes [r]'s chat to disk with the reply-so-far as a resumable (interrupted) message. */
+    private suspend fun saveCheckpoint(r: Run, text: String, steps: List<com.arin.data.CommandRun>, thinkingSoFar: String) {
+        if (r.chat == TEMP_CHAT || r.base.isEmpty()) return
+        val id = r.chat
         val partial = Message(
             fromUser = false,
             text = text.ifBlank { "Working…" } + "\n\n⚠️ **Arin stopped here** (closed, crashed or lost connection). " +
@@ -1193,9 +1226,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             commands = steps,
             interrupted = true,
         )
-        val chat = Chat(id = id, title = title, updated = System.currentTimeMillis(), messages = messages.toList() + partial,
-            projectId = chatProject?.id, pinned = chatPinned, reaOn = reaOn)
-        withContext(Dispatchers.IO) { if (streaming) runCatching { store.save(chat) } }
+        withContext(Dispatchers.IO) {
+            if (runs[r.chat] !== r) return@withContext
+            runCatching {
+                val saved = store.load(id)
+                val chat = saved?.copy(messages = r.base + partial, updated = System.currentTimeMillis())
+                    ?: Chat(id = id, title = r.chatTitle, updated = System.currentTimeMillis(), messages = r.base + partial)
+                store.save(chat)
+            }
+        }
     }
 
     /** Carries on an interrupted reply from its last completed step (the steps done are sent to the model). */
@@ -1233,13 +1272,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val userSaid = history.lastOrNull { it.fromUser }?.text.orEmpty()
         val hasChatBuild = history.any { !it.fromUser && (it.text.startsWith("🛠️") || it.text.startsWith("⚠️ **The build")) }
         val app = getApplication<Application>()
-        streaming = true
-        liveText = ""
-        liveThinking = ""
-        status = null
+        // Each chat runs its own reply; others keep going in the background.
+        val run = Run(chatKey(), title, messages.toList())
+        if (runs.containsKey(run.chat)) return
+        runs[run.chat] = run
+        run.liveText = ""
+        run.liveThinking = ""
+        run.status = null
         ReplyService.start(app)
         // App-wide scope: the reply finishes even if this screen goes away.
-        job = ArinApp.scope.launch {
+        run.job = ArinApp.scope.launch {
             val thinking = StringBuilder()
             var thinkStart = 0L
             var answer = ""
@@ -1252,27 +1294,27 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             var researchNudges = 0
             var stopped = false
             var failStreak = 0
-            liveCommands.clear()
+            run.liveCommands.clear()
             var failure: String? = null
             try {
                 val turns = Attachments.toTurns(p, history, projectMedia(project)).toMutableList()
                 // Save progress every few seconds, so a crash or a killed app leaves a reply that can be resumed.
-                checkpointJob?.cancel()
-                checkpointJob = launch {
+                run.checkpointJob?.cancel()
+                run.checkpointJob = launch {
                     var lastSig = ""
                     while (true) {
                         kotlinx.coroutines.delay(3_000)
-                        val sig = "${liveCommands.size}:${liveText.length / 300}"
-                        if (sig != lastSig && (liveCommands.any { it.kind != "steer" } || liveText.length > 300)) {
+                        val sig = "${run.liveCommands.size}:${run.liveText.length / 300}"
+                        if (sig != lastSig && (run.liveCommands.any { it.kind != "steer" } || run.liveText.length > 300)) {
                             lastSig = sig
-                            saveCheckpoint(Prompt.clean(liveText), liveCommands.toList(), thinking.toString())
+                            saveCheckpoint(run, Prompt.clean(run.liveText), run.liveCommands.toList(), thinking.toString())
                         }
                     }
                 }
                 if (servers.isNotEmpty()) {
-                    status = "Connecting to tools…"
+                    run.status = "Connecting to tools…"
                     val problems = com.arin.mcp.Mcp.connectAll(app, servers, canStart = useTerminal)
-                    status = null
+                    run.status = null
                     reaMissing = reaChat && com.arin.mcp.Mcp.status(com.arin.mcp.Mcp.REA.name) == null
                     val others = problems.filter { it != com.arin.mcp.Mcp.REA_MISSING }
                     if (others.isNotEmpty()) notice = others.joinToString("\n")
@@ -1281,14 +1323,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 if (offline && !com.arin.llm.LocalModel.isUp()) {
                     val file = offlineModelFor(currentSavedApi()) ?: com.arin.llm.LocalModel.lastModel(app)
                     val problem = if (file == null) "No offline model is downloaded yet. Open Settings → Offline models."
-                        else com.arin.llm.LocalModel.start(app, file) { status = it }
-                    status = null
+                        else com.arin.llm.LocalModel.start(app, file) { run.status = it }
+                    run.status = null
                     if (problem != null) throw com.arin.llm.LlmException(problem)
                 }
                 val system = if (offline) Prompt.localSystem(memoryList, aboutYou, howToAnswer, replyStyle) else Prompt.system(
                     searchFlag, memoryFlag, memoryList, project, useTerminal, com.arin.mcp.Mcp.promptSection(activeNames, compact = saveCredits),
                     terminalInfo = com.arin.terminal.Shell.describe(app),
-                    pastChats = if (memoryFlag) withContext(Dispatchers.IO) { runCatching { store.recentTitles(chatId) }.getOrDefault("") } else "",
+                    pastChats = if (memoryFlag) withContext(Dispatchers.IO) { runCatching { store.recentTitles(run.chat) }.getOrDefault("") } else "",
                     aboutPerson = aboutYou,
                     howToAnswer = howToAnswer,
                     style = replyStyle,
@@ -1316,7 +1358,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 var searches = 0
                 while (true) {
                     // Messages the person sent while Arin was working go in before the next step.
-                    val notes = takeSteering()
+                    val notes = takeSteering(run)
                     if (notes.isNotEmpty()) {
                         val joined = "[While you were working, the person sent this. Follow it; it overrides earlier plans where they conflict.]\n" +
                             notes.joinToString("\n")
@@ -1326,7 +1368,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         notes.forEach { n ->
                             val s = com.arin.data.CommandRun(n, "", null, kind = "steer")
                             ran += s
-                            liveCommands += s
+                            run.liveCommands += s
                         }
                     }
                     val text = StringBuilder()
@@ -1349,13 +1391,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                     while (firstAt == 0L) {
                                         kotlinx.coroutines.delay(1_000)
                                         val secs = (System.currentTimeMillis() - t0) / 1000
-                                        if (firstAt == 0L && secs >= 3) status = "Waiting for ${m.substringAfterLast('/')} to start answering… ${secs}s"
+                                        if (firstAt == 0L && secs >= 3) run.status = "Waiting for ${m.substringAfterLast('/')} to start answering… ${secs}s"
                                     }
                                 }
                                 try {
                                     Llm.stream(p, key, m, system, sent, cache = saveCredits).collect { d ->
-                                        if (steerPending) throw SteerInterrupt()
-                                        if (firstAt == 0L) { firstAt = System.currentTimeMillis(); waitJob.cancel(); status = null }
+                                        if (run.steerPending) throw SteerInterrupt()
+                                        if (firstAt == 0L) { firstAt = System.currentTimeMillis(); waitJob.cancel(); run.status = null }
                                         val nowMs = System.currentTimeMillis()
                                         // Redraw at most ~15 times a second: re-rendering the whole reply on every token
                                         // made long answers crawl on the phone.
@@ -1367,23 +1409,23 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                                     lastUi = nowMs
                                                     val now = text.toString()
                                                     // Hold back what may be a search request; show everything else as it arrives.
-                                                    liveText = if (useSearch && searches < Prompt.MAX_SEARCHES && Prompt.maybeSearch(now)) "" else Prompt.clean(now)
+                                                    run.liveText = if (useSearch && searches < Prompt.MAX_SEARCHES && Prompt.maybeSearch(now)) "" else Prompt.clean(now)
                                                 }
                                             }
                                             is Delta.Thinking -> {
                                                 if (thinkStart == 0L) thinkStart = System.currentTimeMillis()
                                                 thinking.append(d.text)
-                                                if (redraw) { lastUi = nowMs; liveThinking = thinking.toString() }
+                                                if (redraw) { lastUi = nowMs; run.liveThinking = thinking.toString() }
                                             }
                                         }
                                     }
                                 } finally {
                                     waitJob.cancel()
-                                    if (status?.startsWith("Waiting for ") == true) status = null
+                                    if (run.status?.startsWith("Waiting for ") == true) run.status = null
                                 }
                                 // Show the final text even if the last tokens fell between redraws.
-                                text.toString().let { now -> liveText = if (useSearch && searches < Prompt.MAX_SEARCHES && Prompt.maybeSearch(now)) "" else Prompt.clean(now) }
-                                if (thinking.isNotEmpty()) liveThinking = thinking.toString()
+                                text.toString().let { now -> run.liveText = if (useSearch && searches < Prompt.MAX_SEARCHES && Prompt.maybeSearch(now)) "" else Prompt.clean(now) }
+                                if (thinking.isNotEmpty()) run.liveThinking = thinking.toString()
                                 val end = System.currentTimeMillis()
                                 runCatching {
                                     com.arin.CrashLog.note(app, "speed", "Reply speed: ${m.substringAfterLast('/')}",
@@ -1407,12 +1449,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                     streamRetries++
                                     val wait = if (e is java.io.IOException) listOf(3, 5, 10, 15, 20, 30, 30)[streamRetries - 1] else 1
                                     for (left in wait downTo 1) {
-                                        status = if (e is java.io.IOException) "Connection lost — reconnecting in ${left}s (try $streamRetries of $maxTries). Your progress is kept."
+                                        run.status = if (e is java.io.IOException) "Connection lost — reconnecting in ${left}s (try $streamRetries of $maxTries). Your progress is kept."
                                             else if (text.isEmpty()) "The model hiccuped — retrying…"
                                             else "The model's reply cut off — continuing from where it stopped…"
                                         kotlinx.coroutines.delay(1_000)
                                     }
-                                    status = null
+                                    run.status = null
                                     continue
                                 }
                                 throw e
@@ -1426,7 +1468,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         // Keep what was written so far, then continue with the person's new message.
                         val partial = text.toString()
                         if (partial.isNotBlank()) turns += Turn(false, partial + "\n[Stopped here because the person sent a message.]")
-                        liveText = ""
+                        run.liveText = ""
                         continue
                     }
                     val full = text.toString()
@@ -1436,7 +1478,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     val action = if (underLimit) Prompt.agentAction(full) else null
                     val cmd = if (underLimit && action == null) Prompt.command(full) else null
                     if (action != null || cmd != null) {
-                        liveText = ""
+                        run.liveText = ""
                         val label = when (action) {
                             is Prompt.AgentAction.Install -> "install " + action.spec
                             is Prompt.AgentAction.Read -> "read " + action.path + if (action.from > 1) " (from line ${action.from})" else ""
@@ -1446,19 +1488,19 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         }
                         var allowed = true
                         if (!terminalOn) {
-                            allowed = askToRun("Let Arin use the terminal for this task?\n\n$label", tool = false, force = true)
+                            allowed = askToRun("Let Arin use the terminal for this task?\n\n$label", tool = false, force = true, fromChat = run.chat)
                             if (allowed) toggleTerminal(true)
                         } else if (action !is Prompt.AgentAction.Read) {
                             allowed = askToRun(if (action is Prompt.AgentAction.Write) label + "\n\n" + action.content.take(1_500) else
-                                if (action is Prompt.AgentAction.Edit) "$label\n\n− ${action.old.take(600)}\n+ ${action.new.take(600)}" else label, tool = false)
+                                if (action is Prompt.AgentAction.Edit) "$label\n\n− ${action.old.take(600)}\n+ ${action.new.take(600)}" else label, tool = false, fromChat = run.chat)
                         }
-                        val shellProblem = if (allowed) com.arin.terminal.AgentTools.ensureShell(app) { status = it } else null
+                        val shellProblem = if (allowed) com.arin.terminal.AgentTools.ensureShell(app) { run.status = it } else null
                         val run = if (!allowed) {
                             com.arin.data.CommandRun(label, "The person chose not to allow this.", null, ran = false)
                         } else if (shellProblem != null) {
                             com.arin.data.CommandRun(label, shellProblem, 1)
                         } else {
-                            status = when (action) {
+                            run.status = when (action) {
                                 is Prompt.AgentAction.Install -> "Installing " + action.spec.take(60)
                                 is Prompt.AgentAction.Read -> "Reading " + action.path.take(60)
                                 is Prompt.AgentAction.Write -> "Writing " + action.path.take(60)
@@ -1472,11 +1514,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                 is Prompt.AgentAction.Edit -> com.arin.terminal.AgentTools.edit(app, action.path, action.old, action.new)
                                 null -> com.arin.terminal.Shell.run(app, cmd!!)
                             }
-                            status = null
+                            run.status = null
                             com.arin.data.CommandRun(label, r.forModel(), r.exitCode)
                         }
                         ran += run
-                        liveCommands += run
+                        run.liveCommands += run
                         turns += Turn(false, full)
                         val failed = run.ran && run.exitCode != 0
                         failStreak = if (failed) failStreak + 1 else 0
@@ -1494,7 +1536,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     val call = if (ran.count { it.kind != "steer" } < Prompt.MAX_COMMANDS && com.arin.mcp.Mcp.connected(activeNames).isNotEmpty()) Prompt.toolCall(full) else null
                     if (call != null) {
-                        liveText = ""
+                        run.liveText = ""
                         val (name, body) = call
                         val run = if (name == "find_tools") {
                             com.arin.data.CommandRun("find_tools: $body", com.arin.mcp.Mcp.find(body, allowed = activeNames), 0, kind = "tool")
@@ -1505,17 +1547,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                             val label = "$name ${body.take(400)}"
                             when {
                                 args == null -> com.arin.data.CommandRun(label, "The arguments weren't one valid JSON object. Send them as {\"name\": value}.", 1, kind = "tool")
-                                !askToRun(label, tool = true) -> com.arin.data.CommandRun(label, "The person chose not to allow this tool call.", null, ran = false, kind = "tool")
+                                !askToRun(label, tool = true, fromChat = run.chat) -> com.arin.data.CommandRun(label, "The person chose not to allow this tool call.", null, ran = false, kind = "tool")
                                 else -> {
-                                    status = "Using $name"
+                                    run.status = "Using $name"
                                     val r = com.arin.mcp.Mcp.call(app, name, args, activeNames)
-                                    status = null
+                                    run.status = null
                                     com.arin.data.CommandRun(label, shorten(r.text), if (r.isError) 1 else 0, kind = "tool")
                                 }
                             }
                         }
                         ran += run
-                        liveCommands += run
+                        run.liveCommands += run
                         turns += Turn(false, full)
                         turns += Turn(
                             true,
@@ -1535,16 +1577,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     val recallQuery = if (memoryFlag && recalls < 4) Prompt.recall(full) else null
                     if (recallQuery != null) {
                         recalls++
-                        liveText = ""
-                        status = "Remembering “$recallQuery”"
-                        val found = withContext(Dispatchers.IO) { runCatching { store.recall(recallQuery, chatId) }.getOrDefault("") }
-                        status = null
+                        run.liveText = ""
+                        run.status = "Remembering “$recallQuery”"
+                        val found = withContext(Dispatchers.IO) { runCatching { store.recall(recallQuery, run.chat) }.getOrDefault("") }
+                        run.status = null
                         val result = if (found.isBlank())
                             "No past chat mentions \"$recallQuery\". Try other words once, or answer from this chat and ask the person for the detail."
                         else "Matching parts of past chats:\n\n$found\n\nNow answer using these where they help."
                         val step = com.arin.data.CommandRun("recall: $recallQuery", result.take(2_000), 0, kind = "tool")
                         ran += step
-                        liveCommands += step
+                        run.liveCommands += step
                         turns += Turn(false, full)
                         turns += Turn(true, result)
                         continue
@@ -1556,11 +1598,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         val file = if (media == null && page == null) Prompt.download(full) else null
                         if (media != null || page != null || file != null) {
                             webSteps++
-                            liveText = ""
+                            run.liveText = ""
                             val result: String = when {
                                 media != null -> {
                                     val (video, q) = media
-                                    status = if (video) "Finding videos of “$q”" else "Finding pictures of “$q”"
+                                    run.status = if (video) "Finding videos of “$q”" else "Finding pictures of “$q”"
                                     val found = runCatching {
                                         if (video) com.arin.media.MediaSearch.videos(q) else com.arin.media.MediaSearch.images(q)
                                     }.getOrDefault(emptyList())
@@ -1571,16 +1613,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                         "). They are shown to the person right under your reply. Now finish your answer; don't list their links."
                                 }
                                 page != null -> {
-                                    status = "Reading " + page.removePrefix("https://").removePrefix("http://").take(60)
+                                    run.status = "Reading " + page.removePrefix("https://").removePrefix("http://").take(60)
                                     "Content of $page:\n\n" + runCatching { com.arin.builder.WebTools.fetch(page) }.getOrElse { "Couldn't open it: ${it.message}" }.take(24_000)
                                 }
                                 else -> {
                                     val (name, url) = file!!
-                                    status = "Downloading " + url.substringAfterLast('/').substringBefore('?').take(60)
+                                    run.status = "Downloading " + url.substringAfterLast('/').substringBefore('?').take(60)
                                     downloadFile(app, url, name)
                                 }
                             }
-                            status = null
+                            run.status = null
                             val label = when {
                                 media != null -> (if (media.first) "videos: " else "pictures: ") + media.second
                                 page != null -> "fetch $page"
@@ -1588,7 +1630,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                             }
                             val step = com.arin.data.CommandRun(label, result.take(2_000), 0, kind = "tool")
                             ran += step
-                            liveCommands += step
+                            run.liveCommands += step
                             turns += Turn(false, full)
                             turns += Turn(true, result)
                             continue
@@ -1619,7 +1661,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                     "most one short sentence before it. Build mode pushes to GitHub, builds the APK and posts the APK + zip " +
                                     "links here. If they meant something else, just answer them.",
                             )
-                            liveText = ""
+                            run.liveText = ""
                             continue
                         }
                         // Announced a build or update ("Build spec going out now:") but left out the tag? Ask for it.
@@ -1632,7 +1674,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                     "<build name=\"App name\">the full description of the app</build> (or <update_arin>…</update_arin> " +
                                     "for a change to Arin). Only the tag and at most one short sentence.",
                             )
-                            liveText = ""
+                            run.liveText = ""
                             continue
                         }
                         // Research: it stopped with a short status line instead of searching or writing the report. Push it on.
@@ -1655,7 +1697,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                         "the FULL answer now with the actual information you found (not a summary of your steps), with headings and " +
                                         "a Sources list, and end by telling me what I can do next. Never reply with just a short status line again.",
                             )
-                            liveText = ""
+                            run.liveText = ""
                             continue
                         }
                         // Stopped mid-task ("fixing it by…:" with no command)? Ask the model to carry on.
@@ -1667,18 +1709,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                 "You described your next step but didn't send it. Do it now: put the <run> command or <tool> call " +
                                     "as the last thing in your reply. If the task is actually finished, give the final answer instead.",
                             )
-                            liveText = ""
+                            run.liveText = ""
                             continue
                         }
                         answer = full
                         break
                     }
                     searches++
-                    status = "Searching the web for “$q”"
-                    liveText = ""
+                    run.status = "Searching the web for “$q”"
+                    run.liveText = ""
                     val (hits, results) = WebSearch.searchForModel(q)
                     hits.take(5).forEach { h -> if (sources.none { it.url == h.url }) sources += Source(h.title, h.url) }
-                    status = null
+                    run.status = null
                     turns += Turn(false, "<search>$q</search>")
                     val trimmed = results
                     turns += Turn(true, trimmed + "\n\nNow answer my earlier message using these results where they help.")
@@ -1686,13 +1728,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 if (Prompt.clean(answer).isBlank() && ran.isEmpty()) failure = "The model sent an empty reply. Tap Retry, or pick another model."
             } catch (e: CancellationException) {
                 stopped = true
-                answer = liveText // Stop pressed: keep whatever arrived.
+                answer = run.liveText // Stop pressed: keep whatever arrived.
             } catch (e: Throwable) {
                 failure = e.message ?: "Something went wrong."
                 com.arin.CrashLog.note(getApplication(), "Reply failed", "${p.label} · $m: ${failure}", e.stackTraceToString().take(4_000))
             } finally {
-                checkpointJob?.cancel()
-                checkpointJob = null
+                run.checkpointJob?.cancel()
+                run.checkpointJob = null
                 val seconds = if (thinkStart > 0) ((System.currentTimeMillis() - thinkStart) / 1000).toInt() else 0
                 if (memoryFlag) Prompt.memories(answer).forEach { remember(it) }
                 // The model asked to change Arin itself: start a self-update build.
@@ -1715,7 +1757,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     val ordered = saidAll.any { Prompt.saysBuild(it, hasChatBuild) }
                     // If they said where ("build on github", "build on phone"), start there straight away.
                     val named = saidAll.firstNotNullOfOrNull { Prompt.namedBuildTarget(it) }
-                    if (ordered && named != null) {
+                    if (ordered && named != null && run.chat == chatKey()) {
                         val target = runCatching { BuildTarget.valueOf(named) }.getOrDefault(BuildTarget.CHAT)
                         val (name, description) = buildAsked
                         ArinApp.scope.launch(kotlinx.coroutines.Dispatchers.Main) {
@@ -1761,28 +1803,33 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         pendingBuild = pendingBuild,
                     )
                 }
-                messages += msg
-                streaming = false
-                liveText = ""
-                liveThinking = ""
-                liveCommands.clear()
-                status = null
-                job = null
-                persist()
-                lastFinished = msg
-                ReplyService.stop(app)
+                runs.remove(run.chat)
+                if (run.chat == chatKey()) {
+                    // This chat is open: show the answer here.
+                    messages.clear()
+                    messages.addAll(run.base + msg)
+                    persist()
+                    lastFinished = msg
+                } else if (run.chat != TEMP_CHAT) {
+                    // The person moved to another chat: save the answer into its own chat.
+                    ArinApp.scope.launch(Dispatchers.IO) {
+                        store.load(run.chat)?.let { c -> store.save(c.copy(messages = run.base + msg, updated = System.currentTimeMillis())) }
+                        withContext(Dispatchers.Main) { refreshChats() }
+                    }
+                }
+                if (runs.isEmpty()) ReplyService.stop(app)
                 // Messages sent after the model's last step become the next message.
                 ArinApp.scope.launch(kotlinx.coroutines.Dispatchers.Main) {
-                    if (steering.isNotEmpty() && !streaming) {
-                        val rest = steering.joinToString("\n")
-                        steering.clear()
-                        steerPending = false
+                    if (run.steering.isNotEmpty() && run.chat == chatKey() && !streaming) {
+                        val rest = run.steering.joinToString("\n")
+                        run.steering.clear()
+                        run.steerPending = false
                         send(rest)
                     }
                 }
-                val id = chatId
-                if (!ArinApp.inForeground && notifyOnReply && id != null && !msg.failed) {
-                    ReplyService.notifyReply(app, id, title, msg.text)
+                // Tell the person when a chat they aren't looking at finishes.
+                if ((!ArinApp.inForeground || run.chat != chatKey()) && notifyOnReply && run.chat != TEMP_CHAT && !msg.failed) {
+                    ReplyService.notifyReply(app, run.chat, run.chatTitle, msg.text)
                 }
             }
         }
@@ -1865,7 +1912,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Start a new chat, optionally inside [project]. */
     fun newChat(project: Project? = null, temporary: Boolean = false) {
-        if (streaming) stop()
+        if (this.temporary) runs[TEMP_CHAT]?.job?.cancel() // other chats keep working in the background
         this.temporary = temporary
         reaOn = false
         reaMissing = false
@@ -1926,7 +1973,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun open(id: String) {
         if (id == chatId) return
-        if (streaming) stop()
+        if (temporary) runs[TEMP_CHAT]?.job?.cancel() // other chats keep working in the background
         viewModelScope.launch {
             val chat = withContext(Dispatchers.IO) { store.load(id) } ?: run {
                 notice = "That chat couldn't be opened."
@@ -1942,7 +1989,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             title = chat.title
             chatProject = chat.projectId?.let { pid -> projects.firstOrNull { it.id == pid } }
             messages.clear()
-            messages.addAll(chat.messages)
+            // A chat that's still working: show what it started from (its live reply shows under it), not a checkpoint copy.
+            messages.addAll(runs[chat.id]?.base ?: chat.messages)
             refreshChatBuild()
             Attachments.deleteFiles(pending.toList())
             pending.clear()
@@ -2378,6 +2426,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         /** The single chat where REA (reverse engineering) is active. */
         const val REVERSE_ENG_TITLE = "Reverse engineering"
+        /** Key for a temporary (unsaved) chat's running reply. */
+        const val TEMP_CHAT = "__temporary_chat__"
 
         /** Arin's source repository, set when this build of Arin was made; changeable in Settings → GitHub. */
         const val DEFAULT_SELF_REPO = "poisaingti-spec/aiapp-261110-1752"

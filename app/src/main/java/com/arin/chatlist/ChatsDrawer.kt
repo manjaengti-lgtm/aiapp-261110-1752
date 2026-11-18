@@ -143,6 +143,7 @@ fun ChatsDrawer(
                             onMove = { moving = c },
                             onDelete = { deleting = c },
                             onPin = { vm.togglePin(c.id, !c.pinned) },
+                            working = vm.runs.containsKey(c.id)
                         )
                     }
                 }
@@ -224,6 +225,7 @@ private fun ChatRow(
     onMove: () -> Unit,
     onDelete: () -> Unit,
     onPin: () -> Unit = {},
+    working: Boolean = false,
 ) {
     var menu by remember { mutableStateOf(false) }
     Row(
@@ -237,7 +239,7 @@ private fun ChatRow(
             .padding(horizontal = 16.dp, vertical = 11.dp),
     ) {
         Text(
-            (if (c.pinned) "📌 " else "") + c.title,
+            (if (working) "⏳ " else "") + (if (c.pinned) "📌 " else "") + c.title,
             style = MaterialTheme.typography.bodyLarge,
             color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
