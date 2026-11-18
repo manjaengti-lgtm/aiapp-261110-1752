@@ -500,6 +500,26 @@ private fun Composer(
                 androidx.compose.material3.TextButton(onClick = onCancelEdit) { Text("Cancel") }
             }
         }
+        // This chat's last build didn't succeed (failed, or stopped when Arin closed): resume it or restart it.
+        vm.chatBuildState?.takeIf { it.outcome != "succeeded" && !vm.streaming && !com.arin.builder.BuildRunner.running }?.let { b ->
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+            ) {
+                Column(Modifier.padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 4.dp)) {
+                    Text(
+                        "The last build of ${b.appName} ${b.outcome}." +
+                            if (b.canResume) " Resume keeps everything already built; Restart runs your last request again." else "",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (b.canResume) androidx.compose.material3.TextButton(onClick = { vm.resumeChatBuild(restart = false) }) { Text("Resume last build") }
+                        androidx.compose.material3.TextButton(onClick = { vm.resumeChatBuild(restart = true) }) { Text("Restart build") }
+                    }
+                }
+            }
+        }
         // REA switched on but not installed: install it right from the chat.
         if (vm.reaActive() && (vm.reaMissing || vm.linuxBusy)) {
             Surface(

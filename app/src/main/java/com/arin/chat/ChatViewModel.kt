@@ -526,11 +526,85 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val retryWords = Regex("""\b(try again|retry|again|continue|resume|fix( it| the)?( build| error)?s?|keep going|carry on)\b""", RegexOption.IGNORE_CASE)
 
+    // ---- Chat builds survive restarts: each chat remembers its build project, so it can resume or restart ----
+
+    private fun buildLinks() = getApplication<Application>().getSharedPreferences("chat_builds", android.content.Context.MODE_PRIVATE)
+    private fun linkBuild(chat: String, project: String) = buildLinks().edit().putString(chat, project).apply()
+    private fun linkedBuild(chat: String?): String? = chat?.let { buildLinks().getString(it, null) }
+
+    /** What the last build of this chat's app left behind: shown above the message box with Resume / Restart. */
+    data class ChatBuildState(val projectId: String, val appName: String, val outcome: String, val canResume: Boolean)
+
+    var chatBuildState by mutableStateOf<ChatBuildState?>(null)
+        private set
+
+    /** Re-reads this chat's build status (on opening a chat, and after a build ends). */
+    fun refreshChatBuild() {
+        val id = linkedBuild(chatId)
+        if (id == null || (com.arin.builder.BuildRunner.running && com.arin.builder.BuildRunner.projectId == id)) { chatBuildState = null; return }
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val saved = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                com.arin.builder.BuildRunner.list(app).firstOrNull { it.id == id }
+            }
+            if (saved == null) { chatBuildState = null; return@launch }
+            val lastUser = saved.timeline.indexOfLast { it is com.arin.builder.TimelineItem.User }
+            val lastResult = saved.timeline.indexOfLast { it is com.arin.builder.TimelineItem.Result }
+            val result = saved.timeline.getOrNull(lastResult) as? com.arin.builder.TimelineItem.Result
+            val outcome = when {
+                lastUser > lastResult -> "stopped before it finished"
+                result?.success == true -> "succeeded"
+                else -> "failed"
+            }
+            chatBuildState = ChatBuildState(id, saved.title, outcome, canResume = saved.project != null)
+        }
+    }
+
+    /**
+     * Continues this chat's last build from its checkpoint (code already on GitHub, the fix round it reached, files
+     * that hadn't uploaded), or with [restart] runs the last request again from the beginning on the same app and repo.
+     */
+    fun resumeChatBuild(restart: Boolean) {
+        val state = chatBuildState ?: return
+        val app = getApplication<Application>()
+        if (com.arin.builder.BuildRunner.running) { notice = "A build is already running."; return }
+        if (com.arin.builder.BuildRunner.projectId != state.projectId && !com.arin.builder.BuildRunner.open(app, state.projectId)) {
+            notice = "Couldn't open the saved build."; return
+        }
+        val project = com.arin.builder.BuildRunner.project
+        val lastRequest = com.arin.builder.BuildRunner.timeline.filterIsInstance<com.arin.builder.TimelineItem.User>()
+            .map { it.text.trim() }.lastOrNull { it.isNotBlank() && !retryWords.containsMatchIn(it.take(40)) }
+        val token = githubToken()
+        when {
+            token.isBlank() && project?.owner != com.arin.builder.BuildAgent.LOCAL_OWNER -> { notice = "Sign in with GitHub in Settings first."; return }
+            provider.needsKey && settings.key(provider).isBlank() -> { notice = "Add your ${provider.label} key in Settings."; return }
+        }
+        com.arin.builder.BuildService.start(
+            app,
+            com.arin.builder.BuildRequest(
+                description = if (restart) (lastRequest ?: project?.requirements?.ifBlank { null } ?: project?.description ?: "Build the app") else "Resume",
+                appName = project?.appName ?: state.appName,
+                provider = provider,
+                model = model,
+                apiKey = settings.key(provider),
+                effort = effort,
+                githubToken = token,
+                allowOtherSites = true,
+                project = if (restart) project?.copy(round = 0, pendingPaths = emptyList()) else project,
+                resume = !restart && project != null,
+                localOnly = project?.owner == com.arin.builder.BuildAgent.LOCAL_OWNER,
+            ),
+        )
+        chatBuildState = null
+        followBuildInChat((if (restart) "Restarting " else "Resuming ") + (project?.appName ?: state.appName))
+    }
+
     /** Shows the build's steps live in this chat, like Build mode does. */
     private fun followBuildInChat(title: String) {
         if (chatId == null) persist()
         chatBuildChat = chatId
         chatBuildProject = com.arin.builder.BuildRunner.projectId
+        chatId?.let { linkBuild(it, com.arin.builder.BuildRunner.projectId) }
         val msg = Message(fromUser = false, text = "🛠️ **$title…**\n\nStarting.")
         chatBuildMsg = msg.id
         messages += msg
@@ -613,6 +687,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun postBuildResult(result: com.arin.builder.BuildResult, project: com.arin.builder.Project?) {
+        refreshChatBuild()
         // Started in the Build tab: the result stays there.
         if (chatBuildMsg == null || chatBuildProject != com.arin.builder.BuildRunner.projectId) return
         chatBuildJob?.cancel()
@@ -735,13 +810,20 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             provider.needsKey && settings.key(provider).isBlank() -> "Add your ${provider.label} key in Settings."
             else -> {
                 // A follow-up in the same chat ("try again", "add dark mode") keeps working on the same app.
+                // After a restart the in-memory link is gone: reopen this chat's saved build project.
+                linkedBuild(chatId)?.let { id ->
+                    if (com.arin.builder.BuildRunner.projectId != id && com.arin.builder.BuildRunner.open(app, id)) {
+                        chatBuildChat = chatId; chatBuildProject = id
+                    } else if (com.arin.builder.BuildRunner.projectId == id) { chatBuildChat = chatId; chatBuildProject = id }
+                }
                 val current = com.arin.builder.BuildRunner.project
                 val same = current != null && !current.selfUpdate && chatBuildChat != null && chatBuildChat == chatId &&
                     chatBuildProject == com.arin.builder.BuildRunner.projectId &&
                     (name.isBlank() || name.equals(current.appName, ignoreCase = true) ||
                         retryWords.containsMatchIn(description.take(80)))
-                val lastFailed = (com.arin.builder.BuildRunner.timeline.lastOrNull { it is com.arin.builder.TimelineItem.Result }
-                    as? com.arin.builder.TimelineItem.Result)?.success == false
+                val tl = com.arin.builder.BuildRunner.timeline
+                val lastFailed = tl.indexOfLast { it is com.arin.builder.TimelineItem.User } > tl.indexOfLast { it is com.arin.builder.TimelineItem.Result } ||
+                    (tl.lastOrNull { it is com.arin.builder.TimelineItem.Result } as? com.arin.builder.TimelineItem.Result)?.success == false
                 if (!same) com.arin.builder.BuildRunner.newProject(app)
                 val appName = if (same) current!!.appName
                     else name.ifBlank { description.split(Regex("\\s+")).take(3).joinToString(" ").take(30) }
@@ -1694,6 +1776,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         this.temporary = temporary
         reaOn = false
         reaMissing = false
+        chatBuildState = null
         chatPinned = false
         if (temporary) notice = "Temporary chat: it isn't saved and doesn't use memory."
         chatId = null
@@ -1759,6 +1842,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             temporary = false
             reaOn = chat.reaOn
             title = chat.title
+            chatBuildState = null
             reaMissing = reaActive() && !com.arin.terminal.Linux.installed(getApplication())
             chatPinned = chat.pinned
             chatId = chat.id
@@ -1766,6 +1850,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             chatProject = chat.projectId?.let { pid -> projects.firstOrNull { it.id == pid } }
             messages.clear()
             messages.addAll(chat.messages)
+            refreshChatBuild()
             Attachments.deleteFiles(pending.toList())
             pending.clear()
             editing = null
