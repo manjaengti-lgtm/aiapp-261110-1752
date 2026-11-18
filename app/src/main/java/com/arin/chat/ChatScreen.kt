@@ -299,7 +299,11 @@ private fun TopBar(vm: ChatViewModel, onMenu: () -> Unit, onNew: () -> Unit, onP
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            vm.modelLabel() + if (vm.reaActive()) "  ·  REA on" else "",
+                            vm.modelLabel() + when {
+                                !vm.reaActive() -> ""
+                                vm.reaMissing -> "  ·  REA not installed"
+                                else -> "  ·  REA on"
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                             maxLines = 1,
@@ -491,6 +495,25 @@ private fun Composer(
                     modifier = Modifier.weight(1f),
                 )
                 androidx.compose.material3.TextButton(onClick = onCancelEdit) { Text("Cancel") }
+            }
+        }
+        // REA switched on but not installed: install it right from the chat.
+        if (vm.reaActive() && (vm.reaMissing || vm.linuxBusy)) {
+            Surface(
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+            ) {
+                Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (vm.linuxBusy) "Installing REA… " + (vm.linuxLog.lastOrNull()?.take(90) ?: "")
+                        else "REA is switched on but isn't installed yet.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 2,
+                    )
+                    if (!vm.linuxBusy) androidx.compose.material3.TextButton(onClick = { vm.setUpRea() }) { Text("Install REA") }
+                }
             }
         }
         vm.pending.forEach { f -> FileChip(f, onRemove = { vm.removePending(f) }) }

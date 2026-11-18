@@ -1121,7 +1121,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     status = "Connecting to tools…"
                     val problems = com.arin.mcp.Mcp.connectAll(app, servers, canStart = useTerminal)
                     status = null
-                    if (problems.isNotEmpty()) notice = problems.joinToString("\n")
+                    reaMissing = reaChat && com.arin.mcp.Mcp.status(com.arin.mcp.Mcp.REA.name) == null
+                    val others = problems.filter { it != com.arin.mcp.Mcp.REA_MISSING }
+                    if (others.isNotEmpty()) notice = others.joinToString("\n")
                 }
                 val offline = p == Provider.Custom && com.arin.llm.LocalModel.isLocal(customBaseUrl)
                 if (offline && !com.arin.llm.LocalModel.isUp()) {
@@ -1148,7 +1150,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         usedTerminal = history.takeLast(8).any { it.commands.isNotEmpty() },
                         reaChat = reaChat,
                     ),
-                ) + latestBuildInfo() + (if (reaChat) "\n\nREA STATUS (live, from the app): REA is ON in this chat." else
+                ) + latestBuildInfo() + (if (reaChat && com.arin.mcp.Mcp.status(com.arin.mcp.Mcp.REA.name) == null)
+                    "\n\nREA STATUS (live, from the app): REA is switched ON for this chat but it is NOT installed or not running, " +
+                    "so its tools are unavailable. Don't claim it works and don't try to install it with terminal commands. " +
+                    "If asked, say it isn't installed yet and that the person should tap \"Install REA\" above the message box " +
+                    "(or Settings → Linux → Install Linux + REA)."
+                else if (reaChat) "\n\nREA STATUS (live, from the app): REA is ON and connected in this chat." else
                     "\n\nREA STATUS (live, from the app — this overrides anything in memory or past chats): REA is OFF in this chat. " +
                     "It is not connected here and its tools can't be called. Any remembered REA facts (tool counts, versions, " +
                     "'connected') describe OTHER chats, not this one. If asked whether REA is active here, answer plainly: no, " +
@@ -1626,6 +1633,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (streaming) stop()
         this.temporary = temporary
         reaOn = false
+        reaMissing = false
         chatPinned = false
         if (temporary) notice = "Temporary chat: it isn't saved and doesn't use memory."
         chatId = null
@@ -1652,6 +1660,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** True when the open chat is the reverse-engineering chat (the only one that may use REA). */
     private fun isReverseEngineeringChat() = title.equals(REVERSE_ENG_TITLE, ignoreCase = true)
 
+    /** REA is switched on in the open chat but isn't installed/connected: the chat shows an Install REA bar. */
+    var reaMissing by mutableStateOf(false)
+
     /** REA turned on for THIS chat from the ⋮ menu (the "Reverse engineering" chat always has it on). */
     var reaOn by mutableStateOf(false)
         private set
@@ -1661,6 +1672,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleRea(on: Boolean) {
         reaOn = on
+        reaMissing = on && !com.arin.terminal.Linux.installed(getApplication())
         if (on) {
             if (!terminalOn) { terminalOn = true; settings.terminalOn = true }
             notice = when {
@@ -1686,6 +1698,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             }
             temporary = false
             reaOn = chat.reaOn
+            title = chat.title
+            reaMissing = reaActive() && !com.arin.terminal.Linux.installed(getApplication())
             chatPinned = chat.pinned
             chatId = chat.id
             title = chat.title

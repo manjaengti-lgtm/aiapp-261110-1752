@@ -197,6 +197,8 @@ object Mcp {
     const val BRIDGE_ASSET = "mcp-bridge.mjs"
     /** Printed by a start command when the server's program isn't installed yet. */
     const val NOT_INSTALLED = "ARIN_SERVER_NOT_INSTALLED"
+    /** Shown when REA is switched on in a chat but isn't installed. */
+    const val REA_MISSING = "REA is switched on here but isn't installed yet. Tap Install REA (or Settings → Linux → Install Linux + REA)."
     private const val BRIDGE_PATH = "~/.arin/mcp-bridge.mjs"
 
     /** REA (Reverse Engineer Anything), run in Termux behind Arin's bridge. */
@@ -241,11 +243,17 @@ object Mcp {
             if (existing != null && existing.server == s && existing.ready) continue
             val client = McpClient(s)
             val first = runCatching { client.connect() }
+            // REA belongs in Arin's built-in Linux (Termux's Node.js is too new/old for it). If that Linux isn't
+            // installed yet, don't try Termux: say what to install instead.
+            if (first.isFailure && s.name == REA.name && com.arin.terminal.Linux.supported() && !com.arin.terminal.Linux.installed(context)) {
+                problems += REA_MISSING
+                continue
+            }
             if (first.isFailure && canStart && s.startCommand.isNotBlank() && Shell.problem(context) == null) {
                 if (s.startCommand.contains(BRIDGE_PATH)) installBridge(context)
                 val started = Shell.run(context, s.startCommand, timeoutMs = 120_000)
                 if (started.stdout.contains(NOT_INSTALLED)) {
-                    problems += "${s.name} isn't installed in Termux yet."
+                    problems += if (s.name == REA.name) REA_MISSING else "${s.name} isn't installed yet."
                 } else {
                     var ok = false
                     for (i in 0 until 5) {
