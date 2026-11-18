@@ -20,6 +20,12 @@ will see the place you choose.
   are set too. Pause/Resume and Stop any time. On arrival it stays at B.
 - Share WhatsApp live location: the other person sees you moving along the route.
 
+## Sending to someone
+- **📍 Send present location** – sends where you are right now (the chosen place, or your current point
+  on the trip) as a map pin to WhatsApp or any app.
+- **🔴 Send live location (moving A → B)** – starts the trip and opens WhatsApp. In the chat tap
+  📎 → Location → Share live location. The other person sees you moving from A to B at your speed.
+
 ## One-time setup on the phone
 1. Install the APK and allow location permission.
 2. Settings → About phone → tap **Build number** 7 times to turn on Developer options.

@@ -232,6 +232,8 @@ class MainActivity : ComponentActivity() {
         var showCoords by remember { mutableStateOf(false) }
         var showSave by remember { mutableStateOf(false) }
         var showSpeed by remember { mutableStateOf(false) }
+        var showPresent by remember { mutableStateOf(false) }
+        var showLive by remember { mutableStateOf(false) }
         var mapView by remember { mutableStateOf<MapView?>(null) }
         var layers by remember { mutableStateOf<MapLayers?>(null) }
         var mapStyle by remember { mutableStateOf(prefs.mapStyle) }
@@ -663,6 +665,26 @@ class MainActivity : ComponentActivity() {
                             })
                         }
 
+                        // Send to the recipient
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { showPresent = true },
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp)
+                            ) { Text("📍 Send present\nlocation", fontSize = 13.sp, lineHeight = 15.sp) }
+                            OutlinedButton(
+                                onClick = {
+                                    if (mode == 0) {
+                                        mode = 1
+                                        toast("Live location: set A and B, then tap Send live location")
+                                    } else showLive = true
+                                },
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp),
+                                enabled = !(running && !travelling)
+                            ) { Text("🔴 Send live location\n(moving A → B)", fontSize = 13.sp, lineHeight = 15.sp) }
+                        }
+
                         if (mode == 0) {
                             Button(
                                 onClick = {
@@ -742,6 +764,87 @@ class MainActivity : ComponentActivity() {
                     }) { Text("Go") }
                 },
                 dismissButton = { TextButton(onClick = { showCoords = false }) { Text("Cancel") } }
+            )
+        }
+
+        if (showPresent) {
+            // Where the person is right now: the chosen place, or the current point of the trip.
+            val now: Pt? = when {
+                mode == 0 -> Pt(lat, lng)
+                trip != null -> trip?.pos
+                else -> pointA
+            }
+            AlertDialog(
+                onDismissRequest = { showPresent = false },
+                title = { Text("Send present location") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            now?.let { "%.6f, %.6f".format(it.lat, it.lng) } ?: "Set a place first",
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Sends a Google Maps pin of this place. Or, with fake location ON, open the " +
+                                "WhatsApp chat → 📎 → Location → \"Send your current location\".",
+                            fontSize = 13.sp
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(enabled = now != null, onClick = {
+                        showPresent = false
+                        if (now != null && !Share.sendLocation(ctx, now, true)) toast("Could not open WhatsApp")
+                    }) { Text("WhatsApp") }
+                },
+                dismissButton = {
+                    TextButton(enabled = now != null, onClick = {
+                        showPresent = false
+                        if (now != null) Share.sendLocation(ctx, now, false)
+                    }) { Text("Other apps") }
+                }
+            )
+        }
+
+        if (showLive) {
+            AlertDialog(
+                onDismissRequest = { showLive = false },
+                title = { Text("Send live location (A → B)") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            if (travelling) "Your trip is running. Now share it in WhatsApp:"
+                            else "The trip will start from A at %.0f km/h, then WhatsApp opens:".format(speed),
+                            fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                        )
+                        Text("1. Open the person's chat", fontSize = 13.sp)
+                        Text("2. Tap 📎 → Location → Share live location", fontSize = 13.sp)
+                        Text("3. Choose how long (15 min / 1 h / 8 h) → Send", fontSize = 13.sp)
+                        Text(
+                            "They will see you moving from A to B at your speed. Keep this app's trip " +
+                                "running; WhatsApp updates their map every few seconds.",
+                            fontSize = 12.sp, color = Color.Gray
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val r = route
+                        if (!travelling) {
+                            when {
+                                pointA == null || pointB == null -> { toast("Set both A and B first"); return@TextButton }
+                                routing || r == null -> { toast("Please wait, finding route…"); return@TextButton }
+                                !checkReady() -> return@TextButton
+                                else -> {
+                                    MockLocationService.error.value = null
+                                    MockLocationService.startTravel(ctx, r, speed, drift)
+                                }
+                            }
+                        }
+                        showLive = false
+                        if (!Share.openWhatsApp(ctx)) toast("WhatsApp is not installed")
+                    }) { Text(if (travelling) "Open WhatsApp" else "Start trip & open WhatsApp") }
+                },
+                dismissButton = { TextButton(onClick = { showLive = false }) { Text("Cancel") } }
             )
         }
 
