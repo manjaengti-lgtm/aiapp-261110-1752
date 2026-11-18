@@ -3,9 +3,6 @@ package com.fakelocation.app
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
 
 data class Place(val name: String, val lat: Double, val lng: Double)
 
@@ -67,55 +64,5 @@ class Prefs(ctx: Context) {
         val arr = JSONArray()
         list.forEach { arr.put(JSONObject().put("n", it.name).put("a", it.lat).put("o", it.lng)) }
         sp.edit().putString("favs", arr.toString()).apply()
-    }
-}
-
-/** Place search using OpenStreetMap Nominatim (free, no key). Call off the main thread. */
-object PlaceSearch {
-    fun search(query: String): List<Place> {
-        var last: Exception? = null
-        repeat(2) {
-            try {
-                return nominatim(query)
-            } catch (e: Exception) {
-                last = e
-                Thread.sleep(1200) // Nominatim allows ~1 request per second
-            }
-        }
-        throw last ?: Exception("Search failed")
-    }
-
-    private fun nominatim(query: String): List<Place> {
-        val url = URL(
-            "https://nominatim.openstreetmap.org/search?format=json&limit=15&q=" +
-                URLEncoder.encode(query, "UTF-8")
-        )
-        val conn = url.openConnection() as HttpURLConnection
-        conn.setRequestProperty("User-Agent", "FakeLocationApp/1.0 (Android)")
-        conn.setRequestProperty("Accept-Language", "en")
-        conn.connectTimeout = 10000
-        conn.readTimeout = 15000
-        try {
-            val text = conn.inputStream.bufferedReader().use { it.readText() }
-            val arr = JSONArray(text)
-            return (0 until arr.length()).mapNotNull {
-                val o = arr.optJSONObject(it) ?: return@mapNotNull null
-                val la = o.optString("lat").toDoubleOrNull() ?: return@mapNotNull null
-                val lo = o.optString("lon").toDoubleOrNull() ?: return@mapNotNull null
-                Place(o.optString("display_name", "%.5f, %.5f".format(la, lo)), la, lo)
-            }.distinctBy { "%.4f,%.4f".format(it.lat, it.lng) }
-        } finally {
-            conn.disconnect()
-        }
-    }
-
-    /** Accepts "12.34, 56.78" (the format Google Maps copies) or "12.34 56.78". */
-    fun parseCoords(text: String): Pair<Double, Double>? {
-        val parts = text.trim().split(Regex("[,\\s]+")).filter { it.isNotBlank() }
-        if (parts.size != 2) return null
-        val a = parts[0].toDoubleOrNull() ?: return null
-        val o = parts[1].toDoubleOrNull() ?: return null
-        if (a !in -90.0..90.0 || o !in -180.0..180.0) return null
-        return a to o
     }
 }

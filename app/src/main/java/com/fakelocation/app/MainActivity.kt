@@ -65,6 +65,7 @@ import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.tileprovider.MapTileProviderBasic
 import org.osmdroid.util.BoundingBox
 import java.io.File
+import java.util.Locale
 import kotlin.math.roundToInt
 import kotlin.math.PI
 import kotlin.math.abs
@@ -283,7 +284,7 @@ class MainActivity : ComponentActivity() {
         var resultsFor by remember { mutableIntStateOf(0) } // 0 = single place, 1 = A, 2 = B
         var searching by remember { mutableIntStateOf(-1) }
         var favorites by remember { mutableStateOf(prefs.favorites()) }
-        var showCoords by remember { mutableStateOf(false) }
+        var coordTarget by remember { mutableStateOf<Int?>(null) } // 0 single, 1 A, 2 B
         var showSave by remember { mutableStateOf(false) }
         var showSpeed by remember { mutableStateOf(false) }
         var showPresent by remember { mutableStateOf(false) }
@@ -352,6 +353,8 @@ class MainActivity : ComponentActivity() {
             return locked
         }
 
+        fun mapCenter(): Pt? = mapView?.mapCenter?.let { Pt(it.latitude, it.longitude) }
+
         /** which: 1 = A (start), 2 = B (destination). */
         fun setAB(which: Int, p: Pt, name: String?, c: Boolean) {
             if (tripLocked()) return
@@ -364,6 +367,14 @@ class MainActivity : ComponentActivity() {
                 prefs.putPt("b", p); prefs.putName("b", label)
             }
             if (c && (pointA == null || pointB == null)) center(p.lat, p.lng)
+            if (name == null || PlaceSearch.parseCoords(name) != null) {
+                // Look up a readable name for a point picked on the map / typed as coordinates.
+                scope.launch {
+                    val n = PlaceName.ofAsync(ctx, p) ?: return@launch
+                    if (which == 1 && pointA == p) { textA = n; prefs.putName("a", n) }
+                    if (which == 2 && pointB == p) { textB = n; prefs.putName("b", n) }
+                }
+            }
         }
 
         fun choose(target: Int, p: Place) {
@@ -379,7 +390,7 @@ class MainActivity : ComponentActivity() {
             searching = target
             scope.launch {
                 try {
-                    val r = withContext(Dispatchers.IO) { PlaceSearch.search(q) }
+                    val r = PlaceSearch.search(ctx, q, mapCenter())
                     resultsFor = target
                     results = r
                     if (r.isEmpty()) toast("No place found")
@@ -395,8 +406,6 @@ class MainActivity : ComponentActivity() {
             if (mode == 0) moveTo(p.latitude, p.longitude, false)
             else if (!tripLocked()) tapPoint = Pt(p.latitude, p.longitude)
         }
-
-        fun mapCenter(): Pt? = mapView?.mapCenter?.let { Pt(it.latitude, it.longitude) }
 
         fun checkReady(): Boolean = when {
             !hasPerm.value -> { askPermissions(); false }
@@ -452,18 +461,18 @@ class MainActivity : ComponentActivity() {
                     SearchField(
                         tag = null, value = query, onChange = { query = it },
                         hint = "Search any place or paste lat, lng",
-                        busy = searching == 0, enabled = true
+                        busy = searching == 0, enabled = true, onCoords = { coordTarget = 0 }
                     ) { doSearch(0, query) }
                 } else {
                     SearchField(
                         tag = "A", color = Color(0xFF2E7D32), value = textA, onChange = { textA = it },
                         hint = "From: search start place",
-                        busy = searching == 1, enabled = !travelling
+                        busy = searching == 1, enabled = !travelling, onCoords = { coordTarget = 1 }
                     ) { doSearch(1, textA) }
                     SearchField(
                         tag = "B", color = Color(0xFFC62828), value = textB, onChange = { textB = it },
                         hint = "To: search destination",
-                        busy = searching == 2, enabled = !travelling
+                        busy = searching == 2, enabled = !travelling, onCoords = { coordTarget = 2 }
                     ) { doSearch(2, textB) }
                 }
 
@@ -682,7 +691,7 @@ class MainActivity : ComponentActivity() {
                                             "%.6f, %.6f".format(lat, lng),
                                             Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.SemiBold
                                         )
-                                        IconButton(onClick = { showCoords = true }) { Icon(Icons.Default.Edit, "Enter coordinates") }
+                                        IconButton(onClick = { coordTarget = 0 }) { Icon(Icons.Default.Edit, "Enter latitude and longitude") }
                                         IconButton(onClick = { showSave = true }) { Icon(Icons.Default.Star, "Save place") }
                                     }
                                 } else {
@@ -924,27 +933,68 @@ class MainActivity : ComponentActivity() {
             )
         }
 
-        if (showCoords) {
-            var text by remember { mutableStateOf("%.6f, %.6f".format(lat, lng)) }
+        coordTarget?.let { target ->
+            val cur: Pt? = when (target) { 0 -> Pt(lat, lng); 1 -> pointA; else -> pointB }
+            var latText by remember(target) { mutableStateOf(cur?.let { "%.6f".format(Locale.US, it.lat) } ?: "") }
+            var lngText by remember(target) { mutableStateOf(cur?.let { "%.6f".format(Locale.US, it.lng) } ?: "") }
+            var paste by remember(target) { mutableStateOf("") }
             AlertDialog(
-                onDismissRequest = { showCoords = false },
-                title = { Text("Enter coordinates") },
+                onDismissRequest = { coordTarget = null },
+                title = {
+                    Text(
+                        when (target) {
+                            1 -> "A (start): latitude & longitude"
+                            2 -> "B (destination): latitude & longitude"
+                            else -> "Latitude & longitude"
+                        }
+                    )
+                },
                 text = {
-                    Column {
-                        Text("Format: latitude, longitude (you can paste from Google Maps)", fontSize = 13.sp)
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(text, { text = it }, singleLine = true)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            latText, { latText = it }, singleLine = true,
+                            label = { Text("Latitude (−90 to 90)") },
+                            placeholder = { Text("e.g. 26.144518") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                        )
+                        OutlinedTextField(
+                            lngText, { lngText = it }, singleLine = true,
+                            label = { Text("Longitude (−180 to 180)") },
+                            placeholder = { Text("e.g. 91.736237") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                        )
+                        Text("…or paste any format / Google Maps link:", fontSize = 12.sp, color = Color.Gray)
+                        OutlinedTextField(
+                            paste,
+                            {
+                                paste = it
+                                PlaceSearch.parseCoords(it)?.let { (a, o) ->
+                                    latText = "%.6f".format(Locale.US, a)
+                                    lngText = "%.6f".format(Locale.US, o)
+                                }
+                            },
+                            singleLine = true,
+                            placeholder = { Text("26°08'40\"N 91°44'10\"E", fontSize = 13.sp) }
+                        )
                     }
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        val c = PlaceSearch.parseCoords(text)
-                        if (c == null) toast("Invalid coordinates") else {
-                            moveTo(c.first, c.second, true); showCoords = false
+                        val a = latText.trim().replace(',', '.').toDoubleOrNull()
+                        val o = lngText.trim().replace(',', '.').toDoubleOrNull()
+                        val c = if (a != null && o != null && a in -90.0..90.0 && o in -180.0..180.0) a to o
+                        else PlaceSearch.parseCoords("${latText.trim()} ${lngText.trim()}")
+                        if (c == null) toast("Invalid latitude / longitude") else {
+                            coordTarget = null
+                            if (target == 0) moveTo(c.first, c.second, true)
+                            else {
+                                setAB(target, Pt(c.first, c.second), null, false)
+                                center(c.first, c.second)
+                            }
                         }
                     }) { Text("Go") }
                 },
-                dismissButton = { TextButton(onClick = { showCoords = false }) { Text("Cancel") } }
+                dismissButton = { TextButton(onClick = { coordTarget = null }) { Text("Cancel") } }
             )
         }
 
@@ -1069,6 +1119,7 @@ class MainActivity : ComponentActivity() {
         hint: String,
         busy: Boolean,
         enabled: Boolean,
+        onCoords: () -> Unit,
         onSearch: () -> Unit
     ) {
         OutlinedTextField(
@@ -1089,8 +1140,14 @@ class MainActivity : ComponentActivity() {
                 }
             },
             trailingIcon = {
-                if (busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                else IconButton(onClick = onSearch, enabled = enabled) { Icon(Icons.Default.Search, "Search") }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        onClick = onCoords, enabled = enabled,
+                        contentPadding = PaddingValues(horizontal = 4.dp)
+                    ) { Text("Lat/Lng", fontSize = 11.sp) }
+                    if (busy) CircularProgressIndicator(Modifier.padding(end = 12.dp).size(22.dp), strokeWidth = 2.dp)
+                    else IconButton(onClick = onSearch, enabled = enabled) { Icon(Icons.Default.Search, "Search") }
+                }
             },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { onSearch() })
