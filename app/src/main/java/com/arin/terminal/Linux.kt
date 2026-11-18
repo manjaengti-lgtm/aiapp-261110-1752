@@ -105,7 +105,7 @@ object Linux {
             apt-get update
             apt-get install -y --no-install-recommends ca-certificates curl xz-utils procps git python3 python3-pip nano less unzip zip
             case "${'$'}(uname -m)" in aarch64) NA=arm64;; armv7l|armv8l) NA=armv7l;; x86_64) NA=x64;; *) echo "unknown arch"; exit 1;; esac
-            if ! node -v 2>/dev/null | grep -q '^v24'; then
+            if ! node -v 2>/dev/null | grep -Eq '^v24\.(2[2-9]|[3-9][0-9])\.'; then
               V=${'$'}(curl -fsSL https://nodejs.org/dist/latest-v24.x/ | grep -o "node-v24[0-9.]*-linux-${'$'}NA.tar.xz" | head -1)
               echo "Installing ${'$'}V"
               curl -fsSL "https://nodejs.org/dist/latest-v24.x/${'$'}V" | tar -xJ -C /usr/local --strip-components=1
@@ -236,6 +236,20 @@ object Linux {
 
     /** Installs REA (npm package rea-agents) in Linux. */
     suspend fun installRea(context: Context, log: (String) -> Unit): Termux.Result {
+        log("Checking Node.js (REA needs 22.23.4+, 24.22.1+ or 26.12.1+)…")
+        // An older Node 24 from an earlier setup is too old for current REA: put the newest Node 24 in place.
+        val nodeFix = """
+            ok=${'$'}(node -e 'const [a,b,c]=process.versions.node.split(".").map(Number);const v=a*1e6+b*1e3+c;process.stdout.write(String((a===22&&v>=22023004)||(a===24&&v>=24022001)||(a>=26&&v>=26012001)))' 2>/dev/null)
+            if [ "${'$'}ok" != "true" ]; then
+              case "${'$'}(uname -m)" in aarch64) NA=arm64;; armv7l|armv8l) NA=armv7l;; x86_64) NA=x64;; *) echo "unknown arch"; exit 1;; esac
+              V=${'$'}(curl -fsSL https://nodejs.org/dist/latest-v24.x/ | grep -o "node-v24[0-9.]*-linux-${'$'}NA.tar.xz" | head -1)
+              echo "Updating Node.js to ${'$'}V"
+              curl -fsSL "https://nodejs.org/dist/latest-v24.x/${'$'}V" | tar -xJ -C /usr/local --strip-components=1
+            fi
+            echo "node ${'$'}(node -v)"
+        """.trimIndent()
+        val n = run(context, nodeFix, timeoutMs = 20 * 60_000L, onOutput = log)
+        if (n.exitCode != 0) return n
         log("Installing REA (npm install -g rea-agents)…")
         return run(
             context,

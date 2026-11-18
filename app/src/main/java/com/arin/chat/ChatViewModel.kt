@@ -419,12 +419,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         toggleTerminal(true)
         if (mcpServers.none { it.name == com.arin.mcp.Mcp.REA.name }) saveServer(com.arin.mcp.Mcp.REA)
         val app = getApplication<Application>()
-        if (com.arin.terminal.Linux.installed(app) || com.arin.terminal.Termux.problem(app) != null) {
-            // Built-in Linux: install everything without the model, then let the model check it works.
-            if (!com.arin.terminal.Linux.supported()) {
-                notice = "This phone's processor isn't supported by Arin's built-in Linux. Set up Termux instead."
-                return
-            }
+        // REA always goes in Arin's built-in Linux when the phone supports it: Termux's Node.js comes from its own
+        // package list (e.g. 26.3.1), which current REA refuses, while built-in Linux installs a Node REA accepts.
+        if (com.arin.terminal.Linux.supported()) {
             if (linuxBusy) return
             linuxBusy = true
             linuxLog.clear()
