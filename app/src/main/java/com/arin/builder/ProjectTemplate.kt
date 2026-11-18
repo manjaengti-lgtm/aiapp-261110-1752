@@ -163,7 +163,7 @@ object ProjectTemplate {
             jobs:
               build:
                 runs-on: ubuntu-latest
-                timeout-minutes: 30
+                timeout-minutes: 50
                 steps:
                   - uses: actions/checkout@v5
                   - uses: actions/setup-java@v5
@@ -211,6 +211,34 @@ object ProjectTemplate {
                       name: Build ${'$'}{{ github.run_number }}
                       files: app-*.apk
                       make_latest: true
+                  - name: Enable KVM (for the app test)
+                    if: hashFiles('.github/arin-test.sh') != ''
+                    continue-on-error: true
+                    run: |
+                      echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+                      sudo udevadm control --reload-rules
+                      sudo udevadm trigger --name-match=kvm
+                  - name: Test the app on an Android emulator (opens it, taps around, checks for crashes)
+                    if: hashFiles('.github/arin-test.sh') != ''
+                    continue-on-error: true
+                    timeout-minutes: 15
+                    uses: reactivecircus/android-emulator-runner@v2
+                    with:
+                      api-level: 30
+                      arch: x86_64
+                      target: google_apis
+                      disable-animations: true
+                      emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+                      script: bash .github/arin-test.sh app-${'$'}{{ github.run_number }}.apk
+                  - name: Add the test report to the release
+                    if: hashFiles('arin-test-report.txt') != ''
+                    continue-on-error: true
+                    uses: softprops/action-gh-release@v2
+                    with:
+                      tag_name: build-${'$'}{{ github.run_number }}
+                      files: |
+                        arin-test-report.txt
+                        arin-test-screen.png
         """.trimIndent(),
     )
 
@@ -236,6 +264,54 @@ object ProjectTemplate {
 
     /** Workflow added to uploaded projects; uses the project's own Gradle wrapper when it has one. */
     const val IMPORT_WORKFLOW_FILE = "arin-build.yml"
+
+    /** Where the app-test script lives in a project. Its presence turns the emulator test on in the workflow. */
+    const val TEST_SCRIPT_PATH = ".github/arin-test.sh"
+
+    /** Installs the built APK on GitHub's Android emulator, opens it, taps around, and reports crashes. */
+    val testScript = """#!/usr/bin/env bash
+# Arin's app check: installs the APK on the emulator, opens it, taps around, and writes what happened.
+APK="${'$'}1"
+R=arin-test-report.txt
+SHOT=arin-test-screen.png
+AAPT=${'$'}(ls "${'$'}ANDROID_HOME"/build-tools/*/aapt 2>/dev/null | sort -V | tail -1)
+PKG=${'$'}("${'$'}AAPT" dump badging "${'$'}APK" 2>/dev/null | sed -n "s/^package: name='\([^']*\)'.*/\1/p")
+report() {
+  { echo "RESULT: ${'$'}1"; [ -n "${'$'}2" ] && echo "ERROR: ${'$'}2"; echo "PACKAGE: ${'$'}PKG"; [ -f crash.txt ] && cat crash.txt; } > "${'$'}R"
+  cat "${'$'}R"
+  exit 0
+}
+[ -z "${'$'}PKG" ] && report NO_TEST "couldn't read the app's package name"
+adb wait-for-device
+adb logcat -c
+if ! adb install -r -g "${'$'}APK" > install.log 2>&1; then
+  tail -20 install.log > crash.txt
+  report INSTALL_FAILED "${'$'}(grep -m1 -E 'Failure|INSTALL_' install.log)"
+fi
+check() {
+  adb logcat -d > logcat.txt 2>/dev/null
+  if grep -A2 "FATAL EXCEPTION" logcat.txt | grep -q "Process: ${'$'}PKG"; then
+    grep -A60 "FATAL EXCEPTION" logcat.txt | grep "AndroidRuntime" | sed 's/^.*AndroidRuntime: //' | head -60 > crash.txt
+    report CRASH "${'$'}(grep -v -E 'FATAL EXCEPTION|Process:' crash.txt | head -1)"
+  fi
+  if grep -q "ANR in ${'$'}PKG" logcat.txt; then
+    grep -A12 "ANR in ${'$'}PKG" logcat.txt | head -20 > crash.txt
+    report CRASH "The app stopped responding (ANR)"
+  fi
+}
+adb shell monkey -p "${'$'}PKG" -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1
+sleep 15
+adb exec-out screencap -p > "${'$'}SHOT" 2>/dev/null
+check
+if [ -z "${'$'}(adb shell pidof "${'$'}PKG" | tr -d '\r')" ]; then
+  adb logcat -d | grep -i "${'$'}PKG" | tail -40 > crash.txt
+  report NOT_RUNNING "The app closed by itself right after it opened"
+fi
+adb shell monkey -p "${'$'}PKG" --pct-syskeys 0 --pct-appswitch 0 --throttle 250 -v 150 > monkey.log 2>&1
+sleep 3
+check
+report PASS ""
+"""
 
     /**
      * Devcontainer for a GitHub Codespace: a Java image with the Android SDK set up on create, so opening the
@@ -263,7 +339,7 @@ object ProjectTemplate {
         jobs:
           build:
             runs-on: ubuntu-latest
-            timeout-minutes: 45
+            timeout-minutes: 60
             steps:
               - uses: actions/checkout@v5
               - uses: actions/setup-java@v5
@@ -315,6 +391,34 @@ object ProjectTemplate {
                   name: Build ${'$'}{{ github.run_number }}
                   files: app-*.apk
                   make_latest: true
+              - name: Enable KVM (for the app test)
+                if: hashFiles('.github/arin-test.sh') != ''
+                continue-on-error: true
+                run: |
+                  echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+                  sudo udevadm control --reload-rules
+                  sudo udevadm trigger --name-match=kvm
+              - name: Test the app on an Android emulator (opens it, taps around, checks for crashes)
+                if: hashFiles('.github/arin-test.sh') != ''
+                continue-on-error: true
+                timeout-minutes: 15
+                uses: reactivecircus/android-emulator-runner@v2
+                with:
+                  api-level: 30
+                  arch: x86_64
+                  target: google_apis
+                  disable-animations: true
+                  emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+                  script: bash .github/arin-test.sh app-${'$'}{{ github.run_number }}.apk
+              - name: Add the test report to the release
+                if: hashFiles('arin-test-report.txt') != ''
+                continue-on-error: true
+                uses: softprops/action-gh-release@v2
+                with:
+                  tag_name: build-${'$'}{{ github.run_number }}
+                  files: |
+                    arin-test-report.txt
+                    arin-test-screen.png
     """.trimIndent()
 
     val importedSystemPrompt = """

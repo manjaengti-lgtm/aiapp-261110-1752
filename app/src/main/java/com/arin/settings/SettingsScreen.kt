@@ -126,6 +126,16 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
                 CustomInstructionsSettings(vm)
             }
 
+            Section("App testing") {
+                Toggle(
+                    "Test apps after building",
+                    "After an app builds, Arin opens it on an Android emulator on GitHub, taps around, and checks it doesn't crash. " +
+                        "A crash is fixed and re-tested automatically, like a build error. Adds about 3–6 minutes per build.",
+                    vm.testApps,
+                    vm::toggleTestApps,
+                )
+            }
+
             Section("Credits") {
                 Toggle(
                     "Save credits",

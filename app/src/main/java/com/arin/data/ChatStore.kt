@@ -99,6 +99,10 @@ data class Chat(
     val pinned: Boolean = false,
     /** REA (reverse engineering) turned on for this chat. */
     val reaOn: Boolean = false,
+    /** This chat's own model choice: provider, model id, and (for custom APIs) which saved API. Blank = not set yet. */
+    val provider: String = "",
+    val model: String = "",
+    val apiId: String = "",
 )
 
 /** What the chats list needs, without loading every message. */

@@ -55,6 +55,20 @@ object CustomApi {
 
     const val DEFAULT_BASE = "https://tokenharbor.ai/v1"
 
+    /**
+     * One API's address and format, fixed for a whole reply or build. Each chat can use a different API, and a
+     * running task keeps its own even when another chat switches the app's current API.
+     */
+    data class Endpoint(val baseUrl: String, val format: ApiFormat) {
+        fun chatUrl(): String = when (format) {
+            ApiFormat.OpenAI -> "$baseUrl/chat/completions"
+            ApiFormat.Anthropic -> (if (baseUrl.endsWith("/v1")) baseUrl else "$baseUrl/v1") + "/messages"
+        }
+    }
+
+    /** The API in use right now, as a fixed [Endpoint]. */
+    fun current(): Endpoint = Endpoint(baseUrl, format)
+
     @Volatile var baseUrl: String = DEFAULT_BASE
     @Volatile var format: ApiFormat = ApiFormat.OpenAI
     /** A model id typed by the person, for services with no model list or unlisted models. */

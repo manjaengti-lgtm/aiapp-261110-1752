@@ -27,7 +27,7 @@ object Llm {
      * Streams a reply. [maxTokens] asks for a longer answer (Build mode writes whole apps); null leaves the
      * service's default, which for some (DeepSeek-style APIs) is only about 4,000 tokens.
      */
-    fun stream(provider: Provider, key: String, model: String, system: String, turns: List<Turn>, maxTokens: Int? = null, cache: Boolean = false): Flow<Delta> {
+    fun stream(provider: Provider, key: String, model: String, system: String, turns: List<Turn>, maxTokens: Int? = null, cache: Boolean = false, endpoint: CustomApi.Endpoint? = null): Flow<Delta> {
         if (provider.needsKey && key.isBlank()) {
             throw LlmException("Add your ${provider.label} API key in Settings, or switch to Free models.")
         }
@@ -38,9 +38,11 @@ object Llm {
             // OpenAI's newer models take max_completion_tokens; leave ChatGPT on its default.
             Provider.ChatGPT -> openAiStream("$OPENAI_BASE/chat/completions", bearer(key), model, system, turns)
             Provider.Claude -> anthropicStream("$ANTHROPIC_BASE/messages", anthropicHeaders(key), key, model, system, turns, maxTokens, cache)
-            Provider.Custom -> when (CustomApi.format) {
-                ApiFormat.OpenAI -> openAiStream(CustomApi.chatUrl(), bearer(key), model, system, turns, maxTokens = maxTokens)
-                ApiFormat.Anthropic -> anthropicStream(CustomApi.chatUrl(), customAnthropicHeaders(key), key, model, system, turns, maxTokens, cache)
+            Provider.Custom -> (endpoint ?: CustomApi.current()).let { ep ->
+                when (ep.format) {
+                    ApiFormat.OpenAI -> openAiStream(ep.chatUrl(), bearer(key), model, system, turns, maxTokens = maxTokens)
+                    ApiFormat.Anthropic -> anthropicStream(ep.chatUrl(), customAnthropicHeaders(key), key, model, system, turns, maxTokens, cache)
+                }
             }
         }
     }

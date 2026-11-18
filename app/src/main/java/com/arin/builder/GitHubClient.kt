@@ -340,6 +340,26 @@ class GitHubClient(private val token: String) {
             ?: ((r as? JsonObject)?.get("html_url") as? JsonPrimitive)?.contentOrNull
     }.getOrNull()
 
+    /** A text file attached to the release [tag] (e.g. the app-test report), or null. Works for private repos too. */
+    suspend fun releaseText(repo: Repo, tag: String, name: String): String? = runCatching {
+        val rel = call("GET", "/repos/${repo.owner}/${repo.name}/releases/tags/$tag") as? JsonObject ?: return@runCatching null
+        val asset = (rel["assets"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            .firstOrNull { (it["name"] as? JsonPrimitive)?.contentOrNull == name } ?: return@runCatching null
+        val id = (asset["id"] as? JsonPrimitive)?.contentOrNull ?: return@runCatching null
+        withContext(Dispatchers.IO) {
+            val req = request("$api/repos/${repo.owner}/${repo.name}/releases/assets/$id").header("Accept", "application/octet-stream").get().build()
+            Http.client.newCall(req).execute().use { r -> if (r.isSuccessful) r.body?.string() else null }
+        }
+    }.getOrNull()
+
+    /** The public link of a file attached to the release [tag], or null. */
+    suspend fun releaseAssetLink(repo: Repo, tag: String, name: String): String? = runCatching {
+        val rel = call("GET", "/repos/${repo.owner}/${repo.name}/releases/tags/$tag") as? JsonObject ?: return@runCatching null
+        (rel["assets"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            .firstOrNull { (it["name"] as? JsonPrimitive)?.contentOrNull == name }
+            ?.let { (it["browser_download_url"] as? JsonPrimitive)?.contentOrNull }
+    }.getOrNull()
+
     suspend fun latestApkUrl(repo: Repo): String? {
         val rel = runCatching { call("GET", "/repos/${repo.owner}/${repo.name}/releases/latest") }.getOrNull() ?: return null
         val assets = (rel as? JsonObject)?.get("assets") as? JsonArray ?: return null

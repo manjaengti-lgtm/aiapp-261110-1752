@@ -147,6 +147,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
      *     copies become a one-line marker. No unique information is dropped, so the model still has
      *     every bit it needs to build the project.
      */
+    /** Test apps on an Android emulator after building (Settings → Build apps). */
+    var testApps by mutableStateOf(settings.testApps)
+        private set
+
+    fun toggleTestApps(on: Boolean) {
+        testApps = on
+        settings.testApps = on
+        notice = if (on) "Apps will be opened and tested on an Android emulator after each build (adds a few minutes)."
+            else "Apps won't be tested after building (faster builds)."
+    }
+
     var saveCredits by mutableStateOf(settings.saveCredits)
         private set
 
@@ -621,6 +632,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 provider = provider,
                 model = model,
                 apiKey = settings.key(provider),
+                customBaseUrl = if (provider == Provider.Custom) customBaseUrl else "",
+                customFormat = customFormat.name,
+                testApp = testApps,
                 effort = effort,
                 githubToken = token,
                 allowOtherSites = true,
@@ -772,6 +786,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             append("- **GitHub repository:** [Open on GitHub](${com.arin.builder.BuildRunner.repoPage(project)})\n")
             result.phoneApk?.let { append("- **Also compiled on this phone:** `$it`\n") }
             result.codespaceUrl?.let { append("- **Codespace:** [Open the Codespace]($it)\n") }
+            if (result.testNote.isNotBlank()) append("\n**App test:** ${result.testNote}\n")
+            result.testScreenshot?.let { append("- **Screenshot on the emulator:** [Open]($it)\n") }
             append(if (project.selfUpdate) "\nTap the APK link (or Install in Build mode) to update Arin." else "\nTap the APK link to download and install it.")
         } else {
             buildString {
@@ -792,6 +808,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 (if (result.log.isNotBlank()) " Error log (the full list is in the chat message):\n${result.log.take(4_000)}\n" else "") +
                 (result.runUrl?.let { " Full log: $it ." } ?: "") +
                 " When the person asks why it failed, explain from this log in plain words; to fix it, emit a <build> tag that says what to change.\n\n"
+        if (result.success && result.testNote.startsWith("⚠️")) {
+            lastFailure = "The last build ($name) produced an APK, but its emulator test found a problem: ${result.testNote} " +
+                "When the person asks to fix it, emit a <build> tag naming the same app that says to fix this crash.\n\n"
+        }
         postToBuildChat(f.chat, Message(fromUser = false, text = text), progressId, steps)
         if (result.success) result.phoneInstallPath?.let { path ->
             runCatching { com.arin.builder.ApkInstaller.install(getApplication(), java.io.File(path)) }
@@ -890,6 +910,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         provider = provider,
                         model = model,
                         apiKey = settings.key(provider),
+                        customBaseUrl = if (provider == Provider.Custom) customBaseUrl else "",
+                        customFormat = customFormat.name,
+                        testApp = testApps,
                         effort = effort,
                         githubToken = token,
                         allowOtherSites = true,
@@ -1029,6 +1052,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         provider = provider,
                         model = model,
                         apiKey = settings.key(provider),
+                        customBaseUrl = if (provider == Provider.Custom) customBaseUrl else "",
+                        customFormat = customFormat.name,
+                        testApp = testApps,
                         effort = effort,
                         githubToken = token,
                         allowOtherSites = true,
@@ -1255,6 +1281,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val p = provider
         val m = model
         val key = settings.key(p)
+        // This chat's API stays fixed for the whole reply, even if another chat switches to a different one.
+        val endpoint = if (p == Provider.Custom) com.arin.llm.CustomApi.current() else null
         val project = chatProject
         // REA is active in the chat named "Reverse engineering", or wherever it's switched on from the ⋮ menu.
         val reaChat = reaActive()
@@ -1320,8 +1348,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     if (others.isNotEmpty()) notice = others.joinToString("\n")
                 }
                 val offline = p == Provider.Custom && com.arin.llm.LocalModel.isLocal(customBaseUrl)
-                if (offline && !com.arin.llm.LocalModel.isUp()) {
-                    val file = offlineModelFor(currentSavedApi()) ?: com.arin.llm.LocalModel.lastModel(app)
+                val wanted = if (offline) offlineModelFor(currentSavedApi()) else null
+                // This chat's offline model must be the one loaded (another chat may have loaded a different one).
+                if (offline && (!com.arin.llm.LocalModel.isUp() || (wanted != null && com.arin.llm.LocalModel.lastModel(app)?.name != wanted.name))) {
+                    val file = wanted ?: com.arin.llm.LocalModel.lastModel(app)
                     val problem = if (file == null) "No offline model is downloaded yet. Open Settings → Offline models."
                         else com.arin.llm.LocalModel.start(app, file) { run.status = it }
                     run.status = null
@@ -1395,7 +1425,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                     }
                                 }
                                 try {
-                                    Llm.stream(p, key, m, system, sent, cache = saveCredits).collect { d ->
+                                    Llm.stream(p, key, m, system, sent, cache = saveCredits, endpoint = endpoint).collect { d ->
                                         if (run.steerPending) throw SteerInterrupt()
                                         if (firstAt == 0L) { firstAt = System.currentTimeMillis(); waitJob.cancel(); run.status = null }
                                         val nowMs = System.currentTimeMillis()
@@ -1846,7 +1876,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private fun persist() {
         if (messages.isEmpty() || temporary) return
         val id = chatId ?: java.util.UUID.randomUUID().toString().also { chatId = it }
-        val chat = Chat(id = id, title = title, updated = System.currentTimeMillis(), messages = messages.toList(), projectId = chatProject?.id, pinned = chatPinned, reaOn = reaOn)
+        val chat = Chat(id = id, title = title, updated = System.currentTimeMillis(), messages = messages.toList(), projectId = chatProject?.id, pinned = chatPinned, reaOn = reaOn,
+            provider = provider.name, model = model, apiId = currentSavedApi()?.slotId.orEmpty())
         ArinApp.scope.launch(Dispatchers.IO) {
             store.save(chat)
             withContext(Dispatchers.Main) { refreshChats() }
@@ -1991,6 +2022,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             messages.clear()
             // A chat that's still working: show what it started from (its live reply shows under it), not a checkpoint copy.
             messages.addAll(runs[chat.id]?.base ?: chat.messages)
+            applyChatSelection(chat)
             refreshChatBuild()
             Attachments.deleteFiles(pending.toList())
             pending.clear()
@@ -2135,6 +2167,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         models = DefaultModels.of(p)
         model = settings.model(p) ?: models.first().id
         loadModels()
+        rememberChatSelection()
     }
 
     // ---- Custom API ----
@@ -2178,8 +2211,44 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (settings.activeApiId == api.slotId) settings.activeApiId = ""
     }
 
+    // ---- Each chat keeps its own model and API ----
+
+    /** True while a chat's saved choice is being put back (opening a chat): nothing is written then. */
+    private var restoringSelection = false
+    /** A model id to keep when the model list loads (a chat's choice that the service may not list). */
+    private var pinnedModel: Pair<Provider, String>? = null
+
+    /** Puts back the model and API [c] was last using. Other chats keep their own. */
+    private fun applyChatSelection(c: Chat) {
+        val p = runCatching { Provider.valueOf(c.provider) }.getOrNull() ?: return
+        restoringSelection = true
+        try {
+            val api = if (p == Provider.Custom) savedApis.firstOrNull { it.slotId == c.apiId } else null
+            if (api != null) useSavedApi(api, quiet = true) else if (p != provider || p == Provider.Custom) chooseProvider(p)
+            if (c.model.isNotBlank()) {
+                pinnedModel = p to c.model
+                model = c.model
+                settings.setModel(p, c.model)
+            }
+        } finally {
+            restoringSelection = false
+        }
+    }
+
+    /** Saves the open chat's model/API choice on that chat only (without moving it up the chats list). */
+    private fun rememberChatSelection() {
+        if (restoringSelection || temporary) return
+        val id = chatId ?: return
+        val prov = provider.name; val mod = model; val api = currentSavedApi()?.slotId.orEmpty()
+        ArinApp.scope.launch(Dispatchers.IO) {
+            runCatching {
+                store.load(id)?.let { c -> if (c.provider != prov || c.model != mod || c.apiId != api) store.save(c.copy(provider = prov, model = mod, apiId = api)) }
+            }
+        }
+    }
+
     /** Switches replies to a saved API, with its own key and model (even when another API shares its address). */
-    fun useSavedApi(api: com.arin.data.SavedApi) {
+    fun useSavedApi(api: com.arin.data.SavedApi, quiet: Boolean = false) {
         val format = runCatching { com.arin.llm.ApiFormat.valueOf(api.format) }.getOrDefault(com.arin.llm.ApiFormat.OpenAI)
         val key = settings.apiKey(api)
         settings.activeApiId = api.slotId
@@ -2189,8 +2258,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (api.model.isNotBlank()) settings.setModelFor(api.baseUrl, api.model)
         chooseProvider(Provider.Custom)
         activeApiTick++
-        notice = "Using ${api.name}" + if (key.isBlank()) " (no API key saved for it: tap Edit to add one)" else ""
-        offlineModelFor(api)?.let { file ->
+        if (!quiet) notice = "Using ${api.name} in this chat" + if (key.isBlank()) " (no API key saved for it: tap Edit to add one)" else ""
+        rememberChatSelection()
+        if (!quiet) offlineModelFor(api)?.let { file ->
             val app = getApplication<Application>()
             ArinApp.scope.launch {
                 if (com.arin.llm.LocalModel.lastModel(app)?.name == file.name && com.arin.llm.LocalModel.isUp()) return@launch
@@ -2356,7 +2426,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun chooseModel(option: ModelOption) {
         model = option.id
+        pinnedModel = provider to option.id
         settings.setModel(provider, option.id)
+        rememberChatSelection()
     }
 
     fun saveKey(p: Provider, key: String) {
@@ -2419,7 +2491,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             models = list
             // Keep the saved choice if it still exists; otherwise take the first.
             val saved = settings.model(p)
-            model = list.firstOrNull { it.id == saved }?.id ?: list.first().id
+            // A chat's chosen model stays even if the service doesn't list it.
+            val pin = pinnedModel?.takeIf { it.first == p }?.second
+            model = list.firstOrNull { it.id == saved }?.id ?: pin ?: list.first().id
         }
     }
 

@@ -42,6 +42,11 @@ data class BuildRequest(
      * Everything that was asked for, in full (e.g. the whole chat about the app). Blank: [description] is all there is.
      */
     val requirements: String = "",
+    /** The custom API this build uses (its own, even if another chat switches APIs). Blank = the app's current one. */
+    val customBaseUrl: String = "",
+    val customFormat: String = "",
+    /** After the APK builds, open it on GitHub's Android emulator and check it doesn't crash (fixed like build errors). */
+    val testApp: Boolean = true,
     /** [requirements] already covers earlier requests too (a chat), so it replaces what the project has saved. */
     val requirementsComplete: Boolean = false,
 )
@@ -65,12 +70,22 @@ data class BuildResult(
     val codespaceUrl: String? = null,
     /** Save the APK to the phone automatically (used for codespace builds). */
     val autoDownloadApk: Boolean = false,
+    /** What the emulator test found, in plain words (blank when the app wasn't tested). */
+    val testNote: String = "",
+    /** Screenshot of the app's first screen on the emulator, if the test took one. */
+    val testScreenshot: String? = null,
 )
 
 /**
  * Build Mode agent: the model writes or edits the app, GitHub Actions builds it, and build errors
  * go back to the model to fix, until the APK builds or the fix rounds for the Brain level run out.
  */
+/** The fixed API address for [BuildRequest] (custom APIs only). */
+fun BuildRequest.endpoint(): com.arin.llm.CustomApi.Endpoint? =
+    if (provider == com.arin.llm.Provider.Custom && customBaseUrl.isNotBlank())
+        com.arin.llm.CustomApi.Endpoint(customBaseUrl, runCatching { com.arin.llm.ApiFormat.valueOf(customFormat) }.getOrDefault(com.arin.llm.ApiFormat.OpenAI))
+    else null
+
 class BuildAgent(
     private val req: BuildRequest,
     private val emit: (BuildEvent) -> Unit,
@@ -93,6 +108,8 @@ class BuildAgent(
     /** Updating Arin itself (its own repo, workflow and signing key). */
     private val self = req.selfUpdate || req.project?.selfUpdate == true
     private val imported = req.project?.imported == true || req.zipPath != null || self
+    /** Test the built app on GitHub's emulator (not for Arin itself, nor builds made only on the phone). */
+    private val testing get() = req.testApp && !self && !localOnly
     private val workflowFile = when {
         self -> SELF_WORKFLOW
         imported -> ProjectTemplate.IMPORT_WORKFLOW_FILE
@@ -357,6 +374,8 @@ class BuildAgent(
                     pendingFiles[".github/workflows/build.yml"] = it.toByteArray()
                 }
             }
+            // The app test runs when this script is in the repo (Settings → Test apps after building).
+            if (!self) pendingFiles[ProjectTemplate.TEST_SCRIPT_PATH] = if (testing) ProjectTemplate.testScript.toByteArray() else null
             if (useLocal) {
                 val ctx = context!!
                 LocalBuild.write(ctx, localSlug, pendingFiles.toMap())
@@ -442,7 +461,8 @@ class BuildAgent(
             saveProject(repo, null)
           }
 
-            step(BuildEvent.Kind.BUILD, "Building the APK on GitHub (usually 3–5 minutes)")
+            step(BuildEvent.Kind.BUILD, if (testing) "Building the APK on GitHub, then testing it on an Android emulator (about 6–12 minutes)"
+                else "Building the APK on GitHub (usually 3–5 minutes)")
             val run = waitForRun(repo, sha)
                 ?: return BuildResult(
                     false,
@@ -455,6 +475,7 @@ class BuildAgent(
                     repo.url,
                 )
 
+            var crashLog: String? = null
             if (run.conclusion == "success") {
                 step(BuildEvent.Kind.STEP, "Build succeeded. Getting the download link")
                 // Only hand over a link once the APK file is really there.
@@ -471,6 +492,42 @@ class BuildAgent(
                 }
                 step(BuildEvent.Kind.DONE, "APK ready: ${mb(size)}")
                 saveProject(repo, apk)
+                // The emulator test (it ran in the same GitHub job, after the APK was published).
+                var testNote = ""
+                var shot: String? = null
+                if (testing) {
+                    val tag = "build-${run.number}"
+                    val report = gh.releaseText(repo, tag, "arin-test-report.txt")
+                    shot = gh.releaseAssetLink(repo, tag, "arin-test-screen.png")
+                    val result = report?.lineSequence()?.firstOrNull { it.startsWith("RESULT:") }?.removePrefix("RESULT:")?.trim()
+                    val why = report?.lineSequence()?.firstOrNull { it.startsWith("ERROR:") }?.removePrefix("ERROR:")?.trim().orEmpty()
+                    when (result) {
+                        "PASS" -> {
+                            testNote = "Tested on an Android emulator: it opens, and tapping around didn't crash it."
+                            step(BuildEvent.Kind.DONE, testNote)
+                        }
+                        "CRASH", "NOT_RUNNING", "INSTALL_FAILED" -> {
+                            val plain = when (result) {
+                                "INSTALL_FAILED" -> "The APK wouldn't install on the emulator"
+                                "NOT_RUNNING" -> "The app closed by itself right after it opened"
+                                else -> "The app crashed on the emulator"
+                            } + (if (why.isNotBlank()) ": $why" else "")
+                            if (round < maxFixRounds) {
+                                crashLog = "RUNTIME PROBLEM (the app builds, but fails when it runs on an Android emulator).\n" +
+                                    "ERROR: $plain\n\nTest report and crash log:\n" + report.orEmpty().take(8_000)
+                                step(BuildEvent.Kind.ERROR, "$plain. Fixing it")
+                            } else {
+                                testNote = "⚠️ $plain. The APK is ready, but say \"fix the crash\" to keep fixing it."
+                                step(BuildEvent.Kind.ERROR, testNote)
+                            }
+                        }
+                        else -> {
+                            testNote = "The emulator test couldn't run this time, so the app wasn't checked."
+                            step(BuildEvent.Kind.STEP, testNote)
+                        }
+                    }
+                }
+              if (crashLog == null) {
                 step(BuildEvent.Kind.DONE, "Done")
                 return BuildResult(
                     true,
@@ -485,12 +542,17 @@ class BuildAgent(
                     phoneApk = phoneApk,
                     codespaceUrl = codespaceUrl,
                     autoDownloadApk = req.codespace,
+                    testNote = testNote,
+                    testScreenshot = shot,
                 )
+              }
             }
 
-            step(BuildEvent.Kind.STEP, "Reading the build errors")
-            val errors = gh.failureSummary(repo, run.id)
-            if (round >= maxFixRounds) {
+            val errors = crashLog ?: kotlin.run {
+                step(BuildEvent.Kind.STEP, "Reading the build errors")
+                gh.failureSummary(repo, run.id)
+            }
+            if (crashLog == null && round >= maxFixRounds) {
                 return BuildResult(
                     false,
                     "The build still fails after $round fix round${if (round == 1) "" else "s"}. The errors are below; " +
@@ -511,7 +573,8 @@ class BuildAgent(
                 } else ""
             }
             val count = errors.lines().count { it.startsWith("e: ") || it.contains("error:", true) }.coerceAtLeast(1)
-            step(BuildEvent.Kind.ERROR, "Build failed with $count error${if (count == 1) "" else "s"}: ${plainError(errors)}. Fixing (round $round of $maxFixRounds)")
+            if (crashLog != null) step(BuildEvent.Kind.ERROR, "Fixing the crash (round $round of $maxFixRounds), then building and testing again")
+            else step(BuildEvent.Kind.ERROR, "Build failed with $count error${if (count == 1) "" else "s"}: ${plainError(errors)}. Fixing (round $round of $maxFixRounds)")
             notes = apply(ask(fixPrompt(errors, notes, web)))
             saveProject(repo, null)
         }
@@ -594,7 +657,7 @@ class BuildAgent(
             var scanned = 0
             var about: String? = null
             resilient(
-                attempt = { model -> streamModel(req.provider, req.apiKey, model, working.toList(), system) },
+                attempt = { model -> streamModel(req.provider, req.apiKey, model, working.toList(), system, req.endpoint()) },
                 model = req.model,
                 fallback = { alternativeModel(req.provider, req.apiKey, req.model) },
                 onRetry = { step(BuildEvent.Kind.STEP, it) },
@@ -825,7 +888,9 @@ class BuildAgent(
     }
 
     private fun fixPrompt(errors: String, notes: List<String>, web: String = "") = buildString {
-        appendLine("The app below failed to build. Fix it.")
+        appendLine(if (errors.startsWith("RUNTIME PROBLEM")) "The app below builds, but it CRASHES or won't run when opened on an Android emulator. " +
+            "Find the cause in the crash log (the first 'Caused by' and the app's own lines in the stack trace) and fix it. " +
+            "Typical causes: a missing permission or activity in the manifest, a null value, network on the main thread, a missing resource." else "The app below failed to build. Fix it.")
         appendLine("What the app must do (keep every feature; never fix an error by removing what was asked for):")
         appendLine(if (self) req.description else requirements.take(14_000))
         appendLine()

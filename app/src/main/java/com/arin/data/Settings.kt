@@ -129,6 +129,11 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("memory_on", true)
         set(value) = prefs.edit().putBoolean("memory_on", value).apply()
 
+    /** After building an app, open it on GitHub's Android emulator and fix crashes. */
+    var testApps: Boolean
+        get() = prefs.getBoolean("test_apps", true)
+        set(value) = prefs.edit().putBoolean("test_apps", value).apply()
+
     /** Save credits: send the model less of the old conversation and smaller tool outputs, keeping recent context. */
     var saveCredits: Boolean
         get() = prefs.getBoolean("save_credits", true)
