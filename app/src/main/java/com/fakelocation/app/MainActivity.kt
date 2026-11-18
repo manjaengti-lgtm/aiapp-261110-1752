@@ -51,12 +51,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.ScaleBarOverlay
+import org.osmdroid.views.overlay.TilesOverlay
+import org.osmdroid.views.CustomZoomButtonsController
+import org.osmdroid.tileprovider.MapTileProviderBasic
+import org.osmdroid.util.BoundingBox
 import java.io.File
 import kotlin.math.roundToInt
 
@@ -162,7 +166,42 @@ class MainActivity : ComponentActivity() {
         val b = pin(R.drawable.pin_b, "B", false)
         val cur = pin(R.drawable.dot, "You", true)
         var shownRoute: Route? = null
+        val labels = mutableListOf<TilesOverlay>()
+        val resultMarkers = mutableListOf<Marker>()
+        var shownResults: List<Place>? = null
         val all get() = listOf(line, single, a, b, cur)
+    }
+
+    private fun applyStyle(mv: MapView, l: MapLayers, style: MapStyle) {
+        mv.setTileSource(style.base())
+        l.labels.forEach { mv.overlays.remove(it); it.onDetach(mv) }
+        l.labels.clear()
+        style.labels().forEachIndexed { i, src ->
+            val o = TilesOverlay(MapTileProviderBasic(applicationContext, src), applicationContext)
+            o.setLoadingBackgroundColor(android.graphics.Color.TRANSPARENT)
+            o.setLoadingLineColor(android.graphics.Color.TRANSPARENT)
+            mv.overlays.add(i, o)
+            l.labels += o
+        }
+        mv.invalidate()
+    }
+
+    private fun fit(mv: MapView?, pts: List<Pt>) {
+        if (mv == null || pts.isEmpty()) return
+        if (pts.size == 1 || pts.all { it == pts[0] }) {
+            mv.controller.setZoom(16.0)
+            mv.controller.animateTo(GeoPoint(pts[0].lat, pts[0].lng))
+            return
+        }
+        val box = BoundingBox.fromGeoPoints(pts.map { GeoPoint(it.lat, it.lng) })
+        mv.post { mv.zoomToBoundingBox(box, true, 140) }
+    }
+
+    @Composable
+    private fun MapBtn(label: String, onClick: () -> Unit) {
+        SmallFloatingActionButton(onClick = onClick, containerColor = Color.White, contentColor = Color(0xFF1565C0)) {
+            Text(label, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        }
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
@@ -195,6 +234,8 @@ class MainActivity : ComponentActivity() {
         var showSpeed by remember { mutableStateOf(false) }
         var mapView by remember { mutableStateOf<MapView?>(null) }
         var layers by remember { mutableStateOf<MapLayers?>(null) }
+        var mapStyle by remember { mutableStateOf(prefs.mapStyle) }
+        var styleMenu by remember { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
         val keyboard = LocalSoftwareKeyboardController.current
         val ready = hasPerm.value && mockOn.value
@@ -222,6 +263,8 @@ class MainActivity : ComponentActivity() {
                 Route(listOf(a, b))
             }
             routing = false
+            if (!(MockLocationService.running.value && MockLocationService.trip.value != null))
+                route?.let { fit(mapView, it.pts) }
         }
 
         fun center(la: Double, lo: Double) {
@@ -266,6 +309,7 @@ class MainActivity : ComponentActivity() {
                 try {
                     results = withContext(Dispatchers.IO) { PlaceSearch.search(q) }
                     if (results.isEmpty()) toast("No place found")
+                    else fit(mapView, results.map { Pt(it.lat, it.lng) })
                 } catch (_: Exception) {
                     toast("Search failed. Check your internet.")
                 }
@@ -332,8 +376,11 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize(),
                         factory = { c ->
                             MapView(c).apply {
-                                setTileSource(TileSourceFactory.MAPNIK)
                                 setMultiTouchControls(true)
+                                isTilesScaledToDpi = true // bigger, readable labels
+                                setMaxZoomLevel(20.0)
+                                setMinZoomLevel(3.0)
+                                zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
                                 controller.setZoom(15.0)
                                 val start = trip?.pos ?: pointA ?: Pt(lat, lng)
                                 controller.setCenter(GeoPoint(start.lat, start.lng))
@@ -346,6 +393,11 @@ class MainActivity : ComponentActivity() {
                                 }))
                                 val l = MapLayers(this, c)
                                 overlays.addAll(l.all)
+                                overlays.add(ScaleBarOverlay(this).apply {
+                                    setAlignBottom(true)
+                                    setScaleBarOffset(20, 40)
+                                })
+                                applyStyle(this, l, mapStyle)
                                 layers = l
                                 mapView = this
                                 mapRef = this
@@ -376,6 +428,29 @@ class MainActivity : ComponentActivity() {
                                     // Keep the moving dot on screen.
                                     if (mode == 1 && !mv.boundingBox.contains(gp)) mv.controller.animateTo(gp)
                                 }
+                                // Show every search result as a pin; tap a pin to choose it.
+                                val res = results
+                                if (res !== l.shownResults) {
+                                    l.resultMarkers.forEach { mv.overlays.remove(it) }
+                                    l.resultMarkers.clear()
+                                    res.forEach { p ->
+                                        val m = Marker(mv).apply {
+                                            position = GeoPoint(p.lat, p.lng)
+                                            icon = ContextCompat.getDrawable(ctx, R.drawable.pin_r)
+                                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                                            title = p.name
+                                            infoWindow = null
+                                            setOnMarkerClickListener { _, _ ->
+                                                results = emptyList()
+                                                pick(p.lat, p.lng, true)
+                                                true
+                                            }
+                                        }
+                                        mv.overlays.add(m)
+                                        l.resultMarkers += m
+                                    }
+                                    l.shownResults = res
+                                }
                                 mv.invalidate()
                             }
                         }
@@ -383,12 +458,15 @@ class MainActivity : ComponentActivity() {
 
                     if (results.isNotEmpty()) {
                         Card(
-                            Modifier.padding(10.dp).fillMaxWidth().heightIn(max = 300.dp),
+                            Modifier.padding(start = 10.dp, end = 64.dp, top = 10.dp).fillMaxWidth().heightIn(max = 200.dp),
                             elevation = CardDefaults.cardElevation(6.dp)
                         ) {
                             Column(Modifier.verticalScroll(rememberScrollState())) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Results", Modifier.weight(1f).padding(12.dp), fontWeight = FontWeight.Bold)
+                                    Text(
+                                        "${results.size} places · tap an orange pin or a name",
+                                        Modifier.weight(1f).padding(12.dp), fontWeight = FontWeight.Bold, fontSize = 13.sp
+                                    )
                                     IconButton(onClick = { results = emptyList() }) { Icon(Icons.Default.Close, "Close") }
                                 }
                                 results.forEach { p ->
@@ -407,6 +485,38 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+
+                    // Map controls
+                    Column(
+                        Modifier.align(Alignment.CenterEnd).padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box {
+                            MapBtn("🗺") { styleMenu = true }
+                            DropdownMenu(expanded = styleMenu, onDismissRequest = { styleMenu = false }) {
+                                MapStyle.entries.forEach { st ->
+                                    DropdownMenuItem(
+                                        text = { Text(st.label + if (st == mapStyle) "  ✓" else "") },
+                                        onClick = {
+                                            mapStyle = st; prefs.mapStyle = st; styleMenu = false
+                                            val mv = mapView
+                                            val l = layers
+                                            if (mv != null && l != null) applyStyle(mv, l, st)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        MapBtn("+") { mapView?.controller?.zoomIn() }
+                        MapBtn("−") { mapView?.controller?.zoomOut() }
+                        if (mode == 1 && route != null) MapBtn("⤢") { route?.let { fit(mapView, it.pts) } }
+                    }
+
+                    Text(
+                        mapStyle.attribution, fontSize = 9.sp, color = Color.DarkGray,
+                        modifier = Modifier.align(Alignment.BottomEnd)
+                            .background(Color.White.copy(alpha = 0.7f)).padding(horizontal = 4.dp)
+                    )
 
                     if (running) {
                         Text(

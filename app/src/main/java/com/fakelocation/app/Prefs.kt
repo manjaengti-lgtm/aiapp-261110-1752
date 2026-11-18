@@ -45,6 +45,10 @@ class Prefs(ctx: Context) {
         get() = RouteType.entries.getOrElse(sp.getInt("rtype", 0)) { RouteType.ROADS }
         set(v) = sp.edit().putInt("rtype", v.ordinal).apply()
 
+    var mapStyle: MapStyle
+        get() = MapStyle.entries.getOrElse(sp.getInt("style", 0)) { MapStyle.DETAILED }
+        set(v) = sp.edit().putInt("style", v.ordinal).apply()
+
     fun favorites(): List<Place> {
         val arr = JSONArray(sp.getString("favs", "[]"))
         return (0 until arr.length()).map {
@@ -64,7 +68,7 @@ class Prefs(ctx: Context) {
 object PlaceSearch {
     fun search(query: String): List<Place> {
         val url = URL(
-            "https://nominatim.openstreetmap.org/search?format=json&limit=8&q=" +
+            "https://nominatim.openstreetmap.org/search?format=json&limit=15&q=" +
                 URLEncoder.encode(query, "UTF-8")
         )
         val conn = url.openConnection() as HttpURLConnection
