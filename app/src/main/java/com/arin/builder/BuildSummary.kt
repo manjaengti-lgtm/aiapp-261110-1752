@@ -81,9 +81,30 @@ private fun isAction(kind: BuildEvent.Kind) =
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BuildSummarySheet(onClose: () -> Unit) {
+    StepsSummarySheet(
+        steps = summarize(BuildRunner.timeline.toList()).map { it.text to it.kind },
+        running = BuildRunner.running,
+        doing = BuildRunner.progressText,
+        onClose = onClose,
+        emptyText = "No build steps yet.",
+    )
+}
+
+/**
+ * The summary sheet used everywhere (Build tab, chat builds, and chat replies that run commands, install tools or
+ * edit files): one step per line on a timeline, with the current step at the bottom shimmering while work runs.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun StepsSummarySheet(
+    steps: List<Pair<String, BuildEvent.Kind>>,
+    running: Boolean,
+    doing: String,
+    onClose: () -> Unit,
+    emptyText: String = "No steps yet.",
+    title: String = "Summary",
+) {
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val steps = summarize(BuildRunner.timeline.toList())
-    val running = BuildRunner.running
     val list = rememberLazyListState()
     LaunchedEffect(steps.size) { if (steps.isNotEmpty()) list.animateScrollToItem(steps.size + if (running) 0 else -1) }
     ModalBottomSheet(onDismissRequest = onClose, sheetState = sheet, containerColor = MaterialTheme.colorScheme.surface) {
@@ -92,11 +113,11 @@ fun BuildSummarySheet(onClose: () -> Unit) {
                 IconButton(onClick = onClose, modifier = Modifier.align(Alignment.CenterStart)) {
                     Icon(Icons.Filled.Close, contentDescription = "Close")
                 }
-                Text("Summary", style = MaterialTheme.typography.titleMedium, modifier = Modifier.align(Alignment.Center))
+                Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.align(Alignment.Center))
             }
-            if (steps.isEmpty()) {
+            if (steps.isEmpty() && !running) {
                 Text(
-                    "No build steps yet.",
+                    emptyText,
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(24.dp),
@@ -105,12 +126,11 @@ fun BuildSummarySheet(onClose: () -> Unit) {
             LazyColumn(state = list, contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 32.dp)) {
                 itemsIndexed(steps) { i, s ->
                     val last = i == steps.lastIndex
-                    StepRow(s, current = false, lineBelow = !last || running)
+                    StepRow(SummaryStep(s.first, s.second), current = false, lineBelow = !last || running)
                 }
                 if (running) {
                     item {
-                        val doing = BuildRunner.progressText.takeIf { it.isNotBlank() }?.take(120) ?: "Working"
-                        StepRow(SummaryStep(doing, BuildEvent.Kind.STEP), current = true, lineBelow = false)
+                        StepRow(SummaryStep(doing.takeIf { it.isNotBlank() }?.take(120) ?: "Working", BuildEvent.Kind.STEP), current = true, lineBelow = false)
                     }
                 }
             }

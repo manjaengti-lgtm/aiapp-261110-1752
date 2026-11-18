@@ -397,6 +397,19 @@ private fun Conversation(vm: ChatViewModel, onEdit: (Int) -> Unit) {
     val count = vm.messages.size + if (vm.streaming) 1 else 0
     var summaryOpen by remember { mutableStateOf(false) }
     if (summaryOpen) com.arin.builder.BuildSummarySheet(onClose = { summaryOpen = false })
+    // Summary of a chat reply that ran commands / installed tools / edited files (or of the reply still running).
+    var stepsFor by remember { mutableStateOf<String?>(null) }
+    stepsFor?.let { id ->
+        if (id == "live") com.arin.builder.StepsSummarySheet(
+            steps = chatSteps(vm.liveCommands.toList(), finished = !vm.streaming),
+            running = vm.streaming, doing = vm.status ?: "Working", onClose = { stepsFor = null },
+        ) else vm.messages.firstOrNull { it.id == id }?.let { m ->
+            com.arin.builder.StepsSummarySheet(
+                steps = chatSteps(m.commands, finished = true, failed = m.failed),
+                running = false, doing = "", onClose = { stepsFor = null },
+            )
+        }
+    }
     // Follow the newest text (to the very bottom) until the person scrolls up; the ↓ button turns it back on.
     var follow by remember { mutableStateOf(true) }
     val dragged by list.interactionSource.collectIsDraggedAsState()
@@ -433,13 +446,17 @@ private fun Conversation(vm: ChatViewModel, onEdit: (Int) -> Unit) {
                 else ArinMessage(
                     m, vm.showThinking, isLast = i == vm.messages.lastIndex && !vm.streaming, onRetry = vm::retry,
                     // Build progress in chat: a Summary of every step, like Build mode keeps.
-                    onSummary = if (m.text.startsWith("🛠️")) ({ summaryOpen = true }) else null,
+                    onSummary = when {
+                        m.text.startsWith("🛠️") -> ({ summaryOpen = true })
+                        m.commands.any { it.kind != "steer" } -> ({ stepsFor = m.id })
+                        else -> null
+                    },
                     // Only the newest reply can be built from, so an old plan never starts by accident.
                     onConfirmBuild = if (i == vm.messages.lastIndex && !vm.streaming) ({ t: com.arin.chat.BuildTarget -> vm.confirmBuildAt(m, t) }) else null,
                 )
             }
             if (vm.streaming) {
-                item(key = "live") { LiveReply(vm.liveText, vm.liveThinking, vm.showThinking, vm.status, vm.liveCommands.toList()) }
+                item(key = "live") { LiveReply(vm.liveText, vm.liveThinking, vm.showThinking, vm.status, vm.liveCommands.toList(), onSummary = { stepsFor = "live" }) }
             }
         }
         androidx.compose.animation.AnimatedVisibility(
