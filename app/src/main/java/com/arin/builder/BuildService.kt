@@ -27,28 +27,39 @@ class BuildService : Service() {
 
     /** Progress updates arrive for every word the model writes; the notification only needs a few a second. */
     private var lastProgressNote = 0L
-    private var job: Job? = null
+    /** One job per running build session, so several builds run side by side. */
+    private val jobs = mutableMapOf<String, Job>()
     private var wakeLock: android.os.PowerManager.WakeLock? = null
+    private var inForeground = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            job?.cancel()
+            val id = intent.getStringExtra(EXTRA_SESSION)
+            if (id == null) jobs.values.toList().forEach { it.cancel() } else jobs[id]?.cancel()
             return START_NOT_STICKY
         }
-        val request = BuildRunner.pending
-        if (request == null || job?.isActive == true) return START_NOT_STICKY
-        BuildRunner.pending = null
+        val session = BuildRunner.session(intent?.getStringExtra(EXTRA_SESSION))
+        val request = session?.pending
+        if (session == null || request == null || jobs[session.id]?.isActive == true) {
+            if (jobs.isEmpty()) stopSelf()
+            return START_NOT_STICKY
+        }
+        session.pending = null
         createChannel()
-        startInForeground(progressNotification("Starting…"))
+        // Every startForegroundService() needs a startForeground() soon after, even when already in the foreground.
+        startInForeground(progressNotification(if (jobs.isEmpty()) "Starting…" else "Starting another build…"))
+        inForeground = true
         // Keep the CPU and network awake while building, even with the screen off.
-        wakeLock = (getSystemService(POWER_SERVICE) as android.os.PowerManager)
-            .newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "Arin:build")
-            .apply { acquire(60 * 60 * 1000L) }
-
-        BuildRunner.running = true
-        job = scope.launch {
+        if (wakeLock?.isHeld != true) {
+            wakeLock = (getSystemService(POWER_SERVICE) as android.os.PowerManager)
+                .newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "Arin:build")
+                .apply { acquire(2 * 60 * 60 * 1000L) }
+        }
+        val appName = request.project?.appName ?: request.appName
+        session.running = true
+        jobs[session.id] = scope.launch {
             // The agent parses big model replies and project files: keep that work off the main thread,
             // or the screen freezes and Android closes the app ("isn't responding").
             val result = try { kotlinx.coroutines.withContext(Dispatchers.Default) {
@@ -58,17 +69,17 @@ class BuildService : Service() {
                     emit = { event ->
                         scope.launch {
                             runCatching {
-                                BuildRunner.timeline += TimelineItem.Event(event.copy(text = event.text.take(6_000)))
-                                BuildRunner.save(this@BuildService)
-                                notify(PROGRESS_ID, progressNotification(event.text.take(200)))
+                                session.timeline += TimelineItem.Event(event.copy(text = event.text.take(6_000)))
+                                BuildRunner.save(this@BuildService, session)
+                                notify(PROGRESS_ID, progressNotification(prefix(appName) + event.text.take(200)))
                             }.onFailure { com.arin.CrashLog.record(this@BuildService, it, "build step") }
                         }
                     },
                     onProject = { p ->
                         scope.launch {
                             runCatching {
-                                BuildRunner.project = p
-                                BuildRunner.save(this@BuildService)
+                                session.project = p
+                                BuildRunner.save(this@BuildService, session)
                             }.onFailure { com.arin.CrashLog.record(this@BuildService, it, "saving the build") }
                         }
                     },
@@ -78,9 +89,9 @@ class BuildService : Service() {
                             lastProgressNote = now
                             scope.launch {
                                 runCatching {
-                                    BuildRunner.progress = value
-                                    BuildRunner.progressText = text.take(300)
-                                    if (value != null) notify(PROGRESS_ID, progressNotification(text.take(200).ifBlank { "Working…" }, value))
+                                    session.progress = value
+                                    session.progressText = text.take(300)
+                                    if (value != null) notify(PROGRESS_ID, progressNotification(prefix(appName) + text.take(200).ifBlank { "Working…" }, value))
                                 }
                             }
                         }
@@ -92,32 +103,41 @@ class BuildService : Service() {
                 com.arin.CrashLog.record(this@BuildService, e, "build")
                 BuildResult(false, friendly(e), log = e.stackTraceToString().take(2_000))
             }
-            BuildRunner.timeline += TimelineItem.Result(result.success, result.message, result.apkUrl, result.repoUrl)
+            session.timeline += TimelineItem.Result(result.success, result.message, result.apkUrl, result.repoUrl)
             if (!result.success && result.message != "Stopped.") {
-                com.arin.CrashLog.note(this@BuildService, "Build failed", "${request.project?.appName ?: request.appName}: ${result.message}", result.log)
+                com.arin.CrashLog.note(this@BuildService, "Build failed", "$appName: ${result.message}", result.log)
             }
             if (!result.success && result.log.isNotBlank()) {
-                BuildRunner.timeline += TimelineItem.Event(BuildEvent(BuildEvent.Kind.ERROR, "Why it failed:\n" + result.log.take(3_000)))
+                session.timeline += TimelineItem.Event(BuildEvent(BuildEvent.Kind.ERROR, "Why it failed:\n" + result.log.take(3_000)))
             }
-            BuildRunner.running = false
-            BuildRunner.progress = null
-            BuildRunner.saveNow(this@BuildService)
-            val finished = BuildRunner.project
+            session.running = false
+            session.progress = null
+            BuildRunner.saveNow(this@BuildService, session)
+            val finished = session.project
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                runCatching { BuildRunner.onFinished?.invoke(result, finished) }
+                runCatching { BuildRunner.onFinished?.invoke(result, finished, session.id) }
             }
-            runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            notify(DONE_ID, doneNotification(request.project?.appName ?: request.appName, result))
-            stopSelf()
+            notify(DONE_ID + (session.id.hashCode() and 0xffff), doneNotification(appName, result))
+            jobs.remove(session.id)
+            if (jobs.isEmpty()) {
+                runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                inForeground = false
+                stopSelf()
+            } else {
+                notify(PROGRESS_ID, progressNotification("${jobs.size} build${if (jobs.size == 1) "" else "s"} still running"))
+            }
         }
         return START_NOT_STICKY
     }
 
+    /** With several builds running, each notification line says which app it's about. */
+    private fun prefix(appName: String) = if (jobs.size > 1) "${appName.ifBlank { "App" }}: " else ""
+
     override fun onDestroy() {
         runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
         scope.cancel()
-        BuildRunner.running = false
+        BuildRunner.sessions.values.forEach { it.running = false }
         super.onDestroy()
     }
 
@@ -150,13 +170,13 @@ class BuildService : Service() {
         )
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle("Building your app")
+            .setContentTitle(if (BuildRunner.runningCount > 1) "Building ${BuildRunner.runningCount} apps" else "Building your app")
             .setContentText(text)
             .setOngoing(true)
             .apply { if (value != null) setProgress(100, (value * 100).toInt().coerceIn(0, 100), value < 0f) }
             .setContentIntent(openAppIntent())
             .addAction(Notification.Action.Builder(
-                android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel), "Stop", stop,
+                android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel), if (BuildRunner.runningCount > 1) "Stop all" else "Stop", stop,
             ).build())
             .build()
     }
@@ -190,17 +210,26 @@ class BuildService : Service() {
         private const val DONE_ID = 42
         private const val ACTION_STOP = "com.arin.STOP_BUILD"
 
-        fun start(context: Context, request: BuildRequest) {
-            if (BuildRunner.running) return
-            BuildRunner.pending = request
-            BuildRunner.timeline += TimelineItem.User(request.description)
-            BuildRunner.running = true
-            BuildRunner.save(context)
-            context.startForegroundService(Intent(context, BuildService::class.java))
+        const val EXTRA_SESSION = "session"
+
+        /**
+         * Starts [request] in [session] (the Build tab's by default). Other sessions keep running: several builds
+         * can run at once. Does nothing if this session is already building.
+         */
+        fun start(context: Context, request: BuildRequest, session: BuildSession = BuildRunner.current) {
+            if (session.running) return
+            BuildRunner.sessions[session.id] = session
+            session.pending = request
+            session.timeline += TimelineItem.User(request.description)
+            session.running = true
+            BuildRunner.save(context, session)
+            context.startForegroundService(Intent(context, BuildService::class.java).putExtra(EXTRA_SESSION, session.id))
         }
 
-        fun stop(context: Context) {
-            context.startService(Intent(context, BuildService::class.java).setAction(ACTION_STOP))
+        /** Stops one build ([sessionId]), or every build when it's null. Progress so far stays saved. */
+        fun stop(context: Context, sessionId: String? = null) {
+            context.startService(Intent(context, BuildService::class.java).setAction(ACTION_STOP)
+                .apply { if (sessionId != null) putExtra(EXTRA_SESSION, sessionId) })
         }
     }
 }

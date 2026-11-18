@@ -31,12 +31,55 @@ data class SavedProject(
 private data class OldSaved(val project: Project? = null, val timeline: List<TimelineItem> = emptyList())
 
 /**
+ * One build project's live state. Several can run at the same time (a chat build and a Build-tab build, or builds
+ * from two chats); each has its own timeline, progress and running flag.
+ */
+class BuildSession(val id: String) {
+    val timeline = mutableStateListOf<TimelineItem>()
+    var project by mutableStateOf<Project?>(null)
+    var running by mutableStateOf(false)
+    var progress by mutableStateOf<Float?>(null)
+    var progressText by mutableStateOf("")
+    /** The request the service should run next for this session. */
+    @Volatile internal var pending: BuildRequest? = null
+}
+
+/**
  * Shared Build Mode state: the open project's agent timeline. Every project is saved, so you can
  * come back to any of them later and keep asking for changes (like chats).
  */
 object BuildRunner {
-    /** Called on the main thread when a build ends, so the chat can post the result and its links. */
-    var onFinished: ((BuildResult, Project?) -> Unit)? = null
+    /** Called on the main thread when a build ends (with its session id), so the chat can post the result and its links. */
+    var onFinished: ((BuildResult, Project?, String) -> Unit)? = null
+
+    /** Every build session in use (running ones, and the one open in the Build tab). */
+    val sessions = androidx.compose.runtime.mutableStateMapOf<String, BuildSession>()
+
+    /** The session the Build tab shows. */
+    var current by mutableStateOf(BuildSession(UUID.randomUUID().toString()).also { sessions[it.id] = it })
+        private set
+
+    fun session(id: String?): BuildSession? = id?.let { sessions[it] }
+
+    /** True if any build is running. */
+    val anyRunning: Boolean get() = sessions.values.any { it.running }
+
+    /** How many builds are running now. */
+    val runningCount: Int get() = sessions.values.count { it.running }
+
+    /** A saved project as a session (already open, or loaded from disk), without switching the Build tab to it. */
+    fun sessionFor(context: Context, id: String): BuildSession? {
+        sessions[id]?.let { return it }
+        val saved = runCatching { json.decodeFromString<SavedProject>(File(dir(context), "$id.json").readText()) }.getOrNull() ?: return null
+        return BuildSession(saved.id).also { s ->
+            s.project = saved.project
+            s.timeline.addAll(saved.timeline)
+            sessions[s.id] = s
+        }
+    }
+
+    /** A brand-new session, without switching the Build tab to it. */
+    fun createSession(): BuildSession = BuildSession(UUID.randomUUID().toString()).also { sessions[it.id] = it }
 
     /** Download link for the source as a zip: the exact commit that was built, else the branch. */
     fun sourceZipUrl(p: Project): String =
@@ -46,23 +89,14 @@ object BuildRunner {
     /** The repo page on GitHub. */
     fun repoPage(p: Project): String = "https://github.com/${p.owner}/${p.repo}" + if (p.selfUpdate) "/tree/${p.branch}" else ""
 
-    val timeline = mutableStateListOf<TimelineItem>()
-    var running by mutableStateOf(false)
-        internal set
-    var project by mutableStateOf<Project?>(null)
-        internal set
-    var projectId by mutableStateOf(UUID.randomUUID().toString())
-        private set
-
+    // The Build tab's session, under the names the rest of the app already uses.
+    val timeline: androidx.compose.runtime.snapshots.SnapshotStateList<TimelineItem> get() = current.timeline
+    val running: Boolean get() = current.running
+    val project: Project? get() = current.project
+    val projectId: String get() = current.id
     /** Live progress of the current long step (upload/unpack): 0..1, or null when there's none. */
-    var progress by mutableStateOf<Float?>(null)
-        internal set
-    var progressText by mutableStateOf("")
-        internal set
-
-    /** The request the service should run next. */
-    @Volatile
-    internal var pending: BuildRequest? = null
+    val progress: Float? get() = current.progress
+    val progressText: String get() = current.progressText
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private var loaded = false
@@ -93,29 +127,30 @@ object BuildRunner {
         kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO +
             com.arin.CrashLog.handler { runCatching { com.arin.ArinApp.instance }.getOrNull() },
     )
-    private var pendingSave: kotlinx.coroutines.Job? = null
 
     /** Saves soon (batched, off the main thread) so frequent progress updates don't make the app stutter. */
-    fun save(context: Context) {
-        if (pendingSave?.isActive == true) return
+    fun save(context: Context, s: BuildSession = current) {
+        if (pendingSaves[s.id]?.isActive == true) return
         val app = context.applicationContext
-        pendingSave = io.launch {
+        pendingSaves[s.id] = io.launch {
             kotlinx.coroutines.delay(1_500)
-            writeNow(app)
+            writeNow(app, s)
         }
     }
 
+    private val pendingSaves = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
+
     /** Saves right away (end of a build). */
-    fun saveNow(context: Context) {
-        pendingSave?.cancel()
+    fun saveNow(context: Context, s: BuildSession = current) {
+        pendingSaves[s.id]?.cancel()
         val app = context.applicationContext
-        val snapshot = SavedProject(projectId, System.currentTimeMillis(), project, timeline.toList())
+        val snapshot = SavedProject(s.id, System.currentTimeMillis(), s.project, s.timeline.toList())
         io.launch { write(app, snapshot) }
     }
 
-    private suspend fun writeNow(context: Context) {
+    private suspend fun writeNow(context: Context, s: BuildSession) {
         val snapshot = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-            SavedProject(projectId, System.currentTimeMillis(), project, timeline.toList())
+            SavedProject(s.id, System.currentTimeMillis(), s.project, s.timeline.toList())
         }
         write(context, snapshot)
     }
@@ -138,7 +173,7 @@ object BuildRunner {
             val tmp = File(dir(context), "${s.id}.tmp")
             tmp.writeText(json.encodeToString(s))
             tmp.renameTo(f)
-            prefs(context).edit().putString("current", s.id).apply()
+            if (s.id == current.id) prefs(context).edit().putString("current", s.id).apply()
         }
     }
 
@@ -149,30 +184,31 @@ object BuildRunner {
 
     /** Opens a saved project to keep working on it. */
     fun open(context: Context, id: String): Boolean {
-        if (running) return false
-        val saved = runCatching { json.decodeFromString<SavedProject>(File(dir(context), "$id.json").readText()) }.getOrNull()
-            ?: return false
-        projectId = saved.id
-        project = saved.project
-        timeline.clear()
-        timeline.addAll(saved.timeline)
+        val s = sessionFor(context, id) ?: return false
+        if (current.id != s.id && !current.running) { saveNow(context, current); dropIfIdle(current) }
+        current = s
         prefs(context).edit().putString("current", id).apply()
         return true
     }
 
+    /** Forgets an idle session's in-memory copy (it's saved on disk) so sessions don't pile up. */
+    private fun dropIfIdle(s: BuildSession) {
+        if (!s.running && s.pending == null && s.id != current.id) sessions.remove(s.id)
+    }
+
     fun delete(context: Context, id: String) {
-        if (running && id == projectId) return
+        if (sessions[id]?.running == true) return
         File(dir(context), "$id.json").delete()
         if (id == projectId) newProject(context)
+        sessions.remove(id)
     }
 
     /** Starts a fresh project; the current one stays saved in Projects (and its repo stays on GitHub). */
     fun newProject(context: Context) {
-        if (running) return
-        saveNow(context)
-        projectId = UUID.randomUUID().toString()
-        project = null
-        timeline.clear()
+        val old = current
+        if (old.timeline.isNotEmpty() || old.project != null) saveNow(context, old)
+        current = createSession()
+        if (!old.running) sessions.remove(old.id)
         prefs(context).edit().remove("current").apply()
     }
 }

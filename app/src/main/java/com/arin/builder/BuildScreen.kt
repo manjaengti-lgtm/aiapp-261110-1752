@@ -675,16 +675,15 @@ private fun ProjectList(vm: BuildViewModel, onBack: () -> Unit) {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .clickable(enabled = !vm.running || current) {
-                            if (vm.openProject(p.id) || current) onBack()
-                        }
+                        // Any project can be opened, even while others build (several builds run at once).
+                        .clickable { if (vm.openProject(p.id) || current) onBack() }
                         .padding(start = 16.dp, top = 10.dp, bottom = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(p.title + if (current) "  (open)" else "", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                         val status = when {
-                            current && vm.running -> "Building now…"
+                            BuildRunner.session(p.id)?.running == true -> "Building now…"
                             p.lastResult?.success == true -> "APK ready"
                             p.lastResult != null -> "Last build failed"
                             else -> "In progress"

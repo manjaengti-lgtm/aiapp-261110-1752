@@ -15,7 +15,8 @@ class BuildViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun start(request: BuildRequest) = BuildService.start(app, request)
 
-    fun stop() = BuildService.stop(app)
+    /** Stops the build shown in the Build tab (other builds keep running). */
+    fun stop() = BuildService.stop(app, BuildRunner.projectId)
 
     fun newProject() = BuildRunner.newProject(app)
 

@@ -80,11 +80,12 @@ private fun isAction(kind: BuildEvent.Kind) =
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BuildSummarySheet(onClose: () -> Unit) {
+fun BuildSummarySheet(onClose: () -> Unit, sessionId: String? = null) {
+    val s = BuildRunner.session(sessionId) ?: BuildRunner.current
     StepsSummarySheet(
-        steps = summarize(BuildRunner.timeline.toList()).map { it.text to it.kind },
-        running = BuildRunner.running,
-        doing = BuildRunner.progressText,
+        steps = summarize(s.timeline.toList()).map { it.text to it.kind },
+        running = s.running,
+        doing = s.progressText,
         onClose = onClose,
         emptyText = "No build steps yet.",
     )

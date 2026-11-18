@@ -396,7 +396,7 @@ private fun Conversation(vm: ChatViewModel, onEdit: (Int) -> Unit) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val count = vm.messages.size + if (vm.streaming) 1 else 0
     var summaryOpen by remember { mutableStateOf(false) }
-    if (summaryOpen) com.arin.builder.BuildSummarySheet(onClose = { summaryOpen = false })
+    if (summaryOpen) com.arin.builder.BuildSummarySheet(onClose = { summaryOpen = false }, sessionId = vm.chatBuildSessionId())
     // Summary of a chat reply that ran commands / installed tools / edited files (or of the reply still running).
     var stepsFor by remember { mutableStateOf<String?>(null) }
     stepsFor?.let { id ->
@@ -528,7 +528,8 @@ private fun Composer(
             ) {
                 Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Building ${com.arin.builder.BuildRunner.project?.appName ?: "the app"}… progress is saved as it goes.",
+                        "Building ${vm.chatBuildAppName()}… progress is saved as it goes." +
+                            (com.arin.builder.BuildRunner.runningCount.let { n -> if (n > 1) " ($n builds running)" else "" }),
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.weight(1f),
                     )
@@ -537,7 +538,7 @@ private fun Composer(
             }
         }
         // This chat's last build didn't succeed (failed, or stopped when Arin closed): resume it or restart it.
-        vm.chatBuildState?.takeIf { it.outcome != "succeeded" && !vm.streaming && !com.arin.builder.BuildRunner.running }?.let { b ->
+        vm.chatBuildState?.takeIf { it.outcome != "succeeded" && !vm.streaming && !vm.chatBuildRunning() }?.let { b ->
             Surface(
                 color = MaterialTheme.colorScheme.secondaryContainer,
                 shape = MaterialTheme.shapes.medium,

@@ -120,9 +120,9 @@ fun ArinMessage(
                 ) {
                     Text(message.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(12.dp))
                 }
-            } else if (onSummary != null && com.arin.builder.BuildRunner.running && !message.text.contains("— steps**")) {
+            } else if (onSummary != null && com.arin.builder.BuildRunner.anyRunning && !message.text.contains("— steps**")) {
                 // A build in progress: one line with the current step; tap it for the full Summary.
-                BuildNowLine(onSummary)
+                BuildNowLine(onSummary, message.text)
             } else {
                 SelectionContainer { MarkdownText(message.text) }
                 val artifacts = remember(message.text) { Artifacts.find(message.text) }
@@ -402,9 +402,10 @@ fun FileChip(file: Attachment, onRemove: (() -> Unit)?) {
 
 /** The build's current step on one line, with moving dots, opening the Summary when tapped. */
 @Composable
-private fun BuildNowLine(onOpen: () -> Unit) {
-    val step = (com.arin.builder.BuildRunner.timeline.lastOrNull { it is com.arin.builder.TimelineItem.Event }
-        as? com.arin.builder.TimelineItem.Event)?.event?.text?.lines()?.firstOrNull()?.take(120) ?: "Starting the build"
+private fun BuildNowLine(onOpen: () -> Unit, progressText: String) {
+    // This message's own build (several can run at once): its newest step is the last "- " line of its progress text.
+    val step = progressText.lines().lastOrNull { it.startsWith("- ") }?.removePrefix("- ")?.substringAfter(' ')?.trim()?.take(120)
+        ?.ifBlank { null } ?: "Starting the build"
     val accent = androidx.compose.ui.graphics.Color(0xFFD97757)
     val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "dots")
     val phase by t.animateFloat(
