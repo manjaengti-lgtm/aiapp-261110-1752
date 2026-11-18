@@ -143,7 +143,7 @@ class MainActivity : ComponentActivity() {
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
 
-    private class MapLayers(mv: MapView, ctx: Context) {
+    private class MapLayers(private val mv: MapView, private val ctx: Context) {
         private fun pin(res: Int, title: String, center: Boolean) = Marker(mv).apply {
             icon = ContextCompat.getDrawable(ctx, res)
             setAnchor(Marker.ANCHOR_CENTER, if (center) Marker.ANCHOR_CENTER else Marker.ANCHOR_BOTTOM)
