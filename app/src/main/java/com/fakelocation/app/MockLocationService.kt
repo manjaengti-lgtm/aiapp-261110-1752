@@ -1,0 +1,224 @@
+package com.fakelocation.app
+
+import android.annotation.SuppressLint
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.location.Criteria
+import android.location.Location
+import android.location.LocationManager
+import android.os.Build
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.SystemClock
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlin.random.Random
+
+/**
+ * Feeds a fixed (fake) position into Android's GPS, network and Google fused
+ * location providers every second, so every app — WhatsApp live location,
+ * Google Maps, etc. — sees the chosen place.
+ */
+class MockLocationService : Service() {
+
+    companion object {
+        private const val EXTRA_LAT = "lat"
+        private const val EXTRA_LNG = "lng"
+        private const val EXTRA_DRIFT = "drift"
+        private const val ACTION_STOP = "com.fakelocation.app.STOP"
+        private const val CHANNEL = "fake_location"
+        private const val NOTIF_ID = 7
+
+        val running = MutableStateFlow(false)
+        val error = MutableStateFlow<String?>(null)
+
+        fun start(ctx: Context, lat: Double, lng: Double, drift: Boolean) {
+            val i = Intent(ctx, MockLocationService::class.java)
+                .putExtra(EXTRA_LAT, lat)
+                .putExtra(EXTRA_LNG, lng)
+                .putExtra(EXTRA_DRIFT, drift)
+            ContextCompat.startForegroundService(ctx, i)
+        }
+
+        fun stop(ctx: Context) {
+            ctx.stopService(Intent(ctx, MockLocationService::class.java))
+        }
+    }
+
+    private lateinit var lm: LocationManager
+    private var fused: FusedLocationProviderClient? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private val providers = mutableListOf<String>()
+    private var lat = 0.0
+    private var lng = 0.0
+    private var drift = true
+    private var ready = false
+
+    private val tick = object : Runnable {
+        override fun run() {
+            push()
+            handler.postDelayed(this, 1000)
+        }
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        lm = getSystemService(LOCATION_SERVICE) as LocationManager
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        val prefs = Prefs(this)
+        lat = intent?.getDoubleExtra(EXTRA_LAT, prefs.lastLat) ?: prefs.lastLat
+        lng = intent?.getDoubleExtra(EXTRA_LNG, prefs.lastLng) ?: prefs.lastLng
+        drift = intent?.getBooleanExtra(EXTRA_DRIFT, prefs.drift) ?: prefs.drift
+
+        try {
+            ServiceCompat.startForeground(
+                this, NOTIF_ID, buildNotification(),
+                if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
+            )
+        } catch (e: Exception) {
+            error.value = "Please allow the Location permission first."
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        if (!ready) {
+            try {
+                setupProviders()
+                ready = true
+            } catch (e: SecurityException) {
+                error.value = "Select \"Fake Location\" as the mock location app in Developer options first."
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            handler.post(tick)
+        } else {
+            push()
+            getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildNotification())
+        }
+        error.value = null
+        running.value = true
+        return START_STICKY
+    }
+
+    @Suppress("DEPRECATION")
+    @SuppressLint("MissingPermission")
+    private fun setupProviders() {
+        providers.clear()
+        val wanted = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        for (p in wanted) {
+            try { lm.removeTestProvider(p) } catch (_: Exception) { }
+            try {
+                lm.addTestProvider(
+                    p, false, p == LocationManager.GPS_PROVIDER, false, false,
+                    true, true, true, Criteria.POWER_LOW, Criteria.ACCURACY_FINE
+                )
+                lm.setTestProviderEnabled(p, true)
+                providers += p
+            } catch (e: SecurityException) {
+                throw e
+            } catch (_: Exception) {
+                // Some phones don't allow mocking one of the providers; skip it.
+            }
+        }
+        if (providers.isEmpty()) throw SecurityException("no providers")
+
+        // Google Play Services fused location (used by WhatsApp, Maps, most apps).
+        try {
+            val client = LocationServices.getFusedLocationProviderClient(this)
+            client.setMockMode(true)
+                .addOnSuccessListener { fused = client }
+                .addOnFailureListener { fused = null }
+        } catch (_: Exception) {
+            fused = null
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun push() {
+        var la = lat
+        var lo = lng
+        if (drift) {
+            // ~1–2 m of natural GPS wobble so a live location looks real.
+            la += (Random.nextDouble() - 0.5) * 0.00003
+            lo += (Random.nextDouble() - 0.5) * 0.00003
+        }
+        for (p in providers) {
+            try { lm.setTestProviderLocation(p, makeLocation(p, la, lo)) } catch (_: Exception) { }
+        }
+        fused?.let { c ->
+            try { c.setMockLocation(makeLocation("fused", la, lo)) } catch (_: Exception) { }
+        }
+    }
+
+    private fun makeLocation(provider: String, la: Double, lo: Double) = Location(provider).apply {
+        latitude = la
+        longitude = lo
+        altitude = 40.0 + Random.nextDouble() * 2
+        accuracy = 3f + Random.nextFloat() * 3f
+        speed = 0f
+        bearing = 0f
+        time = System.currentTimeMillis()
+        elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+        if (Build.VERSION.SDK_INT >= 26) {
+            verticalAccuracyMeters = 3f
+            speedAccuracyMetersPerSecond = 0.5f
+            bearingAccuracyDegrees = 10f
+        }
+    }
+
+    private fun buildNotification(): Notification {
+        val nm = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null) {
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL, "Fake location running", NotificationManager.IMPORTANCE_LOW)
+            )
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), flags)
+        val stop = PendingIntent.getService(
+            this, 1, Intent(this, MockLocationService::class.java).setAction(ACTION_STOP), flags
+        )
+        return NotificationCompat.Builder(this, CHANNEL)
+            .setSmallIcon(R.drawable.ic_pin)
+            .setContentTitle("Fake location is ON")
+            .setContentText("%.5f, %.5f".format(lat, lng))
+            .setOngoing(true)
+            .setContentIntent(open)
+            .addAction(0, "Stop", stop)
+            .build()
+    }
+
+    @SuppressLint("MissingPermission")
+    override fun onDestroy() {
+        handler.removeCallbacks(tick)
+        for (p in providers) {
+            try { lm.setTestProviderEnabled(p, false) } catch (_: Exception) { }
+            try { lm.removeTestProvider(p) } catch (_: Exception) { }
+        }
+        providers.clear()
+        try { fused?.setMockMode(false) } catch (_: Exception) { }
+        fused = null
+        ready = false
+        running.value = false
+        super.onDestroy()
+    }
+}

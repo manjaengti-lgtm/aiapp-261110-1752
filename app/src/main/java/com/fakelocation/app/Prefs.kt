@@ -1,0 +1,75 @@
+package com.fakelocation.app
+
+import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+
+data class Place(val name: String, val lat: Double, val lng: Double)
+
+class Prefs(ctx: Context) {
+    private val sp = ctx.getSharedPreferences("fake_location", Context.MODE_PRIVATE)
+
+    // Default: India Gate, New Delhi
+    val lastLat: Double get() = sp.getString("lat", null)?.toDoubleOrNull() ?: 28.6129
+    val lastLng: Double get() = sp.getString("lng", null)?.toDoubleOrNull() ?: 77.2295
+
+    fun saveLast(lat: Double, lng: Double) {
+        sp.edit().putString("lat", lat.toString()).putString("lng", lng.toString()).apply()
+    }
+
+    var drift: Boolean
+        get() = sp.getBoolean("drift", true)
+        set(v) = sp.edit().putBoolean("drift", v).apply()
+
+    fun favorites(): List<Place> {
+        val arr = JSONArray(sp.getString("favs", "[]"))
+        return (0 until arr.length()).map {
+            val o = arr.getJSONObject(it)
+            Place(o.getString("n"), o.getDouble("a"), o.getDouble("o"))
+        }
+    }
+
+    fun saveFavorites(list: List<Place>) {
+        val arr = JSONArray()
+        list.forEach { arr.put(JSONObject().put("n", it.name).put("a", it.lat).put("o", it.lng)) }
+        sp.edit().putString("favs", arr.toString()).apply()
+    }
+}
+
+/** Place search using OpenStreetMap Nominatim (free, no key). Call off the main thread. */
+object PlaceSearch {
+    fun search(query: String): List<Place> {
+        val url = URL(
+            "https://nominatim.openstreetmap.org/search?format=json&limit=8&q=" +
+                URLEncoder.encode(query, "UTF-8")
+        )
+        val conn = url.openConnection() as HttpURLConnection
+        conn.setRequestProperty("User-Agent", "FakeLocationApp/1.0 (Android)")
+        conn.setRequestProperty("Accept-Language", "en")
+        conn.connectTimeout = 10000
+        conn.readTimeout = 15000
+        try {
+            val text = conn.inputStream.bufferedReader().use { it.readText() }
+            val arr = JSONArray(text)
+            return (0 until arr.length()).map {
+                val o = arr.getJSONObject(it)
+                Place(o.getString("display_name"), o.getString("lat").toDouble(), o.getString("lon").toDouble())
+            }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /** Accepts "12.34, 56.78" (the format Google Maps copies) or "12.34 56.78". */
+    fun parseCoords(text: String): Pair<Double, Double>? {
+        val parts = text.trim().split(Regex("[,\\s]+")).filter { it.isNotBlank() }
+        if (parts.size != 2) return null
+        val a = parts[0].toDoubleOrNull() ?: return null
+        val o = parts[1].toDoubleOrNull() ?: return null
+        if (a !in -90.0..90.0 || o !in -180.0..180.0) return null
+        return a to o
+    }
+}
