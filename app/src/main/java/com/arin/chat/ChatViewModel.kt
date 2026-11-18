@@ -1621,6 +1621,33 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Attaches an installed app's APK (plus split APKs) to the message, copied where REA and the terminal can
+     * read it (Arin's Linux home, or Download/Arin), for analysis in a reverse-engineering chat.
+     */
+    fun attachInstalledApp(app: com.arin.data.InstalledApps.App) {
+        viewModelScope.launch {
+            readingFile = "${app.label}.apk"
+            try {
+                val ctx = getApplication<Application>()
+                val files = com.arin.data.InstalledApps.copyApks(ctx, app)
+                files.forEach { f ->
+                    val a = Attachments.read(ctx, android.net.Uri.fromFile(f), forTerminal = true)
+                    pending += a.copy(size = f.length())
+                }
+                files.forEach { it.delete() }
+                notice = "Attached ${app.label} ${app.version}".trim() +
+                    if (files.size > 1) " (${files.size} APK parts: base + ${files.size - 1} split)" else ""
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                notice = "Couldn't copy ${app.label}'s APK: ${e.message}"
+            } finally {
+                readingFile = null
+            }
+        }
+    }
+
     fun removePending(a: Attachment) {
         pending.remove(a)
         Attachments.deleteFiles(listOf(a))

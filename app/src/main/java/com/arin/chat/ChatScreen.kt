@@ -27,6 +27,7 @@ import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -477,6 +478,8 @@ private fun Composer(
     onCancelEdit: () -> Unit,
 ) {
     var attachMenu by remember { mutableStateOf(false) }
+    var pickApp by remember { mutableStateOf(false) }
+    if (pickApp) InstalledAppPicker(onPick = { vm.attachInstalledApp(it); pickApp = false }, onClose = { pickApp = false })
     Column(
         Modifier.fillMaxWidth()
             .navigationBarsPadding()
@@ -556,6 +559,9 @@ private fun Composer(
                         DropdownMenuItem(text = { Text("Camera") }, onClick = { attachMenu = false; onCamera() })
                         DropdownMenuItem(text = { Text("Photos") }, onClick = { attachMenu = false; onPhotos() })
                         DropdownMenuItem(text = { Text("Files (any type)") }, onClick = { attachMenu = false; onFiles() })
+                        if (vm.reaActive()) {
+                            DropdownMenuItem(text = { Text("Installed app (APK)") }, onClick = { attachMenu = false; pickApp = true })
+                        }
                         androidx.compose.material3.HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text((if (vm.webSearch) "✓ " else "") + "Web search") },
@@ -690,4 +696,63 @@ private fun ChatMenu(vm: ChatViewModel) {
             confirmButton = { androidx.compose.material3.TextButton(onClick = { info = false }) { Text("OK") } },
         )
     }
+}
+
+
+/** Pick an app installed on this phone; its APK is attached to the REA chat. */
+@Composable
+private fun InstalledAppPicker(onPick: (com.arin.data.InstalledApps.App) -> Unit, onClose: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var system by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    var apps by remember { mutableStateOf<List<com.arin.data.InstalledApps.App>?>(null) }
+    LaunchedEffect(system) {
+        apps = null
+        apps = runCatching { com.arin.data.InstalledApps.list(context, system) }.getOrDefault(emptyList())
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Attach an installed app") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = query, onValueChange = { query = it },
+                    placeholder = { Text("Search apps") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Include system apps", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    androidx.compose.material3.Switch(checked = system, onCheckedChange = { system = it })
+                }
+                val list = apps
+                if (list == null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text("  Reading installed apps…", style = MaterialTheme.typography.bodySmall)
+                    }
+                } else {
+                    val shown = list.filter { query.isBlank() || it.label.contains(query, true) || it.packageName.contains(query, true) }
+                    if (shown.isEmpty()) Text("No apps match.", style = MaterialTheme.typography.bodySmall)
+                    androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+                        items(shown, key = { it.packageName }) { a ->
+                            Column(
+                                Modifier.fillMaxWidth().clickable { onPick(a) }.padding(vertical = 8.dp),
+                            ) {
+                                Text(a.label, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                                Text(
+                                    "${a.packageName}${if (a.version.isNotBlank()) " · v${a.version}" else ""} · " +
+                                        com.arin.data.Attachments.readableSize(a.sizeBytes) +
+                                        if (a.splits.isNotEmpty()) " · ${a.splits.size + 1} parts" else "",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onClose) { Text("Cancel") } },
+    )
 }
