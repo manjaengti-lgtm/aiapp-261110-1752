@@ -1,5 +1,7 @@
 package com.arin.chat
 
+import com.arin.builder.BuildEvent.Kind as StepKind
+
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.animateFloat
@@ -286,23 +288,22 @@ fun LiveReply(
 
 /** The steps a chat reply took (commands, installs, file reads/writes/edits, tool calls), for the Summary sheet. */
 fun chatSteps(runs: List<com.arin.data.CommandRun>, finished: Boolean, failed: Boolean = false): List<Pair<String, com.arin.builder.BuildEvent.Kind>> {
-    val K = com.arin.builder.BuildEvent.Kind
     val out = runs.map { r ->
         val first = r.command.lineSequence().first().trim().take(200)
         when {
-            r.kind == "steer" -> "You: $first" to K.THINKING
-            !r.ran -> "Not allowed: $first" to K.ERROR
-            r.exitCode != null && r.exitCode != 0 -> "Failed: $first (exit ${r.exitCode})" to K.ERROR
-            first.startsWith("install ") -> "Installed " + first.removePrefix("install ") to K.LIBRARY
-            first.startsWith("write ") -> "Wrote " + first.removePrefix("write ") to K.FILE
-            first.startsWith("edit ") -> "Edited " + first.removePrefix("edit ") to K.FILE
-            first.startsWith("read ") -> "Read " + first.removePrefix("read ") to K.STEP
-            first.startsWith("fetch ") || first.startsWith("download ") || first.startsWith("pictures: ") || first.startsWith("videos: ") -> first to K.WEB
-            r.kind == "tool" -> "Tool: $first" to K.STEP
-            else -> "Ran: $first" to K.BUILD
+            r.kind == "steer" -> "You: $first" to StepKind.THINKING
+            !r.ran -> "Not allowed: $first" to StepKind.ERROR
+            r.exitCode != null && r.exitCode != 0 -> "Failed: $first (exit ${r.exitCode})" to StepKind.ERROR
+            first.startsWith("install ") -> "Installed " + first.removePrefix("install ") to StepKind.LIBRARY
+            first.startsWith("write ") -> "Wrote " + first.removePrefix("write ") to StepKind.FILE
+            first.startsWith("edit ") -> "Edited " + first.removePrefix("edit ") to StepKind.FILE
+            first.startsWith("read ") -> "Read " + first.removePrefix("read ") to StepKind.STEP
+            first.startsWith("fetch ") || first.startsWith("download ") || first.startsWith("pictures: ") || first.startsWith("videos: ") -> first to StepKind.WEB
+            r.kind == "tool" -> "Tool: $first" to StepKind.STEP
+            else -> "Ran: $first" to StepKind.BUILD
         }
     }
-    return if (finished) out + ((if (failed) "Stopped with an error" else "Done — the answer is in the chat") to (if (failed) K.ERROR else K.DONE)) else out
+    return if (finished) out + ((if (failed) "Stopped with an error" else "Done — the answer is in the chat") to (if (failed) StepKind.ERROR else StepKind.DONE)) else out
 }
 
 /** The model's reasoning: open while it streams, then folded to "Reasoned for N s" (tap to open). */
