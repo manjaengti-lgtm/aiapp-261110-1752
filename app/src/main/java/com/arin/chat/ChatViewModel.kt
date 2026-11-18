@@ -1495,7 +1495,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                 if (action is Prompt.AgentAction.Edit) "$label\n\n− ${action.old.take(600)}\n+ ${action.new.take(600)}" else label, tool = false, fromChat = run.chat)
                         }
                         val shellProblem = if (allowed) com.arin.terminal.AgentTools.ensureShell(app) { run.status = it } else null
-                        val run = if (!allowed) {
+                        val step = if (!allowed) {
                             com.arin.data.CommandRun(label, "The person chose not to allow this.", null, ran = false)
                         } else if (shellProblem != null) {
                             com.arin.data.CommandRun(label, shellProblem, 1)
@@ -1517,19 +1517,19 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                             run.status = null
                             com.arin.data.CommandRun(label, r.forModel(), r.exitCode)
                         }
-                        ran += run
-                        run.liveCommands += run
+                        ran += step
+                        run.liveCommands += step
                         turns += Turn(false, full)
-                        val failed = run.ran && run.exitCode != 0
+                        val failed = step.ran && step.exitCode != 0
                         failStreak = if (failed) failStreak + 1 else 0
                         turns += Turn(
                             true,
                             when {
-                                !run.ran -> "I chose not to allow that. Continue without it, or suggest another way."
-                                !failed -> "Done: $label (exit code ${run.exitCode ?: "unknown"}). Output:\n```\n${run.output}\n```\n" +
+                                !step.ran -> "I chose not to allow that. Continue without it, or suggest another way."
+                                !failed -> "Done: $label (exit code ${step.exitCode ?: "unknown"}). Output:\n```\n${step.output}\n```\n" +
                                     "Continue the task: run the next command if needed, or answer when you're done."
-                                else -> "Command FAILED (exit code ${run.exitCode ?: "unknown"}). Output:\n```\n${run.output}\n```\n" +
-                                    fixAdvice(failStreak, Prompt.errorQuery(run.output, label), sources)
+                                else -> "Command FAILED (exit code ${step.exitCode ?: "unknown"}). Output:\n```\n${step.output}\n```\n" +
+                                    fixAdvice(failStreak, Prompt.errorQuery(step.output, label), sources)
                             },
                         )
                         continue
@@ -1538,7 +1538,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     if (call != null) {
                         run.liveText = ""
                         val (name, body) = call
-                        val run = if (name == "find_tools") {
+                        val step = if (name == "find_tools") {
                             com.arin.data.CommandRun("find_tools: $body", com.arin.mcp.Mcp.find(body, allowed = activeNames), 0, kind = "tool")
                         } else {
                             val args = runCatching {
@@ -1556,18 +1556,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                 }
                             }
                         }
-                        ran += run
-                        run.liveCommands += run
+                        ran += step
+                        run.liveCommands += step
                         turns += Turn(false, full)
                         turns += Turn(
                             true,
-                            if (!run.ran) "I didn't allow that tool call. Continue without it, or suggest another way."
-                            else if (run.exitCode != 0) {
+                            if (!step.ran) "I didn't allow that tool call. Continue without it, or suggest another way."
+                            else if (step.exitCode != 0) {
                                 failStreak++
-                                "Result of $name (FAILED):\n```\n${run.output}\n```\n" + fixAdvice(failStreak, Prompt.errorQuery(run.output, name), sources)
+                                "Result of $name (FAILED):\n```\n${step.output}\n```\n" + fixAdvice(failStreak, Prompt.errorQuery(step.output, name), sources)
                             } else {
                                 failStreak = 0
-                                "Result of $name:\n```\n${run.output}\n```\n" +
+                                "Result of $name:\n```\n${step.output}\n```\n" +
                                     "Continue the task: call the next tool or command if needed, or answer when you're done."
                             },
                         )
