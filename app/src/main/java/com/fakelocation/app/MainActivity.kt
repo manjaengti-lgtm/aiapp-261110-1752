@@ -36,6 +36,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -209,12 +212,14 @@ class MainActivity : ComponentActivity() {
     private fun AppScreen() {
         val ctx = this
         val prefs = remember { Prefs(ctx) }
+        val screenH = LocalConfiguration.current.screenHeightDp
         var mode by rememberSaveable { mutableIntStateOf(0) } // 0 = one place, 1 = travel A → B
         var lat by rememberSaveable { mutableDoubleStateOf(prefs.lastLat) }
         var lng by rememberSaveable { mutableDoubleStateOf(prefs.lastLng) }
         var pointA by remember { mutableStateOf(prefs.getPt("a")) }
         var pointB by remember { mutableStateOf(prefs.getPt("b")) }
-        var active by remember { mutableIntStateOf(if (prefs.getPt("a") == null) 0 else 1) }
+        var textA by remember { mutableStateOf(prefs.getName("a") ?: "") }
+        var textB by remember { mutableStateOf(prefs.getName("b") ?: "") }
         var routeType by remember { mutableStateOf(prefs.routeType) }
         var route by remember { mutableStateOf<Route?>(null) }
         var routing by remember { mutableStateOf(false) }
@@ -227,13 +232,17 @@ class MainActivity : ComponentActivity() {
         val trip by MockLocationService.trip.collectAsState()
         var query by remember { mutableStateOf("") }
         var results by remember { mutableStateOf<List<Place>>(emptyList()) }
-        var searching by remember { mutableStateOf(false) }
+        var resultsFor by remember { mutableIntStateOf(0) } // 0 = single place, 1 = A, 2 = B
+        var searching by remember { mutableIntStateOf(-1) }
         var favorites by remember { mutableStateOf(prefs.favorites()) }
         var showCoords by remember { mutableStateOf(false) }
         var showSave by remember { mutableStateOf(false) }
         var showSpeed by remember { mutableStateOf(false) }
         var showPresent by remember { mutableStateOf(false) }
         var showLive by remember { mutableStateOf(false) }
+        var tapPoint by remember { mutableStateOf<Pt?>(null) }
+        var favPick by remember { mutableStateOf<Place?>(null) }
+        var panelOpen by remember { mutableStateOf(true) }
         var mapView by remember { mutableStateOf<MapView?>(null) }
         var layers by remember { mutableStateOf<MapLayers?>(null) }
         var mapStyle by remember { mutableStateOf(prefs.mapStyle) }
@@ -276,6 +285,8 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        fun coordText(p: Pt) = "%.5f, %.5f".format(p.lat, p.lng)
+
         fun moveTo(la: Double, lo: Double, c: Boolean) {
             lat = la; lng = lo
             prefs.saveLast(la, lo)
@@ -284,45 +295,77 @@ class MainActivity : ComponentActivity() {
                 MockLocationService.start(ctx, la, lo, prefs.drift)
         }
 
-        fun setPoint(p: Pt, c: Boolean) {
-            if (MockLocationService.running.value && MockLocationService.trip.value != null) {
-                toast("Stop the trip to change A or B"); return
-            }
-            if (active == 0) {
-                pointA = p; prefs.putPt("a", p)
-                if (pointB == null) active = 1
+        fun tripLocked(): Boolean {
+            val locked = MockLocationService.running.value && MockLocationService.trip.value != null
+            if (locked) toast("Stop the trip to change A or B")
+            return locked
+        }
+
+        /** which: 1 = A (start), 2 = B (destination). */
+        fun setAB(which: Int, p: Pt, name: String?, c: Boolean) {
+            if (tripLocked()) return
+            val label = name?.substringBefore(",")?.trim()?.ifEmpty { null } ?: coordText(p)
+            if (which == 1) {
+                pointA = p; textA = label
+                prefs.putPt("a", p); prefs.putName("a", label)
             } else {
-                pointB = p; prefs.putPt("b", p)
+                pointB = p; textB = label
+                prefs.putPt("b", p); prefs.putName("b", label)
             }
-            if (c) center(p.lat, p.lng)
+            if (c && (pointA == null || pointB == null)) center(p.lat, p.lng)
         }
 
-        fun pick(la: Double, lo: Double, c: Boolean) {
-            if (mode == 0) moveTo(la, lo, c) else setPoint(Pt(la, lo), c)
+        fun choose(target: Int, p: Place) {
+            results = emptyList()
+            if (target == 0) moveTo(p.lat, p.lng, true) else setAB(target, Pt(p.lat, p.lng), p.name, true)
         }
 
-        fun doSearch() {
-            val q = query.trim()
-            if (q.isEmpty()) return
+        fun doSearch(target: Int, q0: String) {
+            val q = q0.trim()
+            if (q.isEmpty()) { toast("Type a place name first"); return }
             keyboard?.hide()
-            PlaceSearch.parseCoords(q)?.let { (a, o) -> pick(a, o, true); return }
-            searching = true
+            PlaceSearch.parseCoords(q)?.let { (a, o) -> choose(target, Place(coordText(Pt(a, o)), a, o)); return }
+            searching = target
             scope.launch {
                 try {
-                    results = withContext(Dispatchers.IO) { PlaceSearch.search(q) }
-                    if (results.isEmpty()) toast("No place found")
-                    else fit(mapView, results.map { Pt(it.lat, it.lng) })
+                    val r = withContext(Dispatchers.IO) { PlaceSearch.search(q) }
+                    resultsFor = target
+                    results = r
+                    if (r.isEmpty()) toast("No place found")
+                    else fit(mapView, r.map { Pt(it.lat, it.lng) })
                 } catch (_: Exception) {
                     toast("Search failed. Check your internet.")
                 }
-                searching = false
+                searching = -1
             }
         }
+
+        fun onMapTap(p: GeoPoint) {
+            if (mode == 0) moveTo(p.latitude, p.longitude, false)
+            else if (!tripLocked()) tapPoint = Pt(p.latitude, p.longitude)
+        }
+
+        fun mapCenter(): Pt? = mapView?.mapCenter?.let { Pt(it.latitude, it.longitude) }
 
         fun checkReady(): Boolean = when {
             !hasPerm.value -> { askPermissions(); false }
             !mockOn.value -> { toast("Finish the setup first: select Fake Location as mock location app."); false }
             else -> true
+        }
+
+        fun startTrip(): Boolean {
+            val r = route
+            return when {
+                pointA == null || pointB == null -> { toast("Set both A (start) and B (destination) first"); false }
+                routing || r == null -> { toast("Please wait, finding route…"); false }
+                !checkReady() -> false
+                else -> {
+                    MockLocationService.error.value = null
+                    MockLocationService.startTravel(ctx, r, speed, drift)
+                    pointA?.let { center(it.lat, it.lng) }
+                    true
+                }
+            }
         }
 
         Scaffold(
@@ -348,34 +391,35 @@ class MainActivity : ComponentActivity() {
                 }
 
                 TabRow(selectedTabIndex = mode) {
-                    Tab(selected = mode == 0, enabled = !running, onClick = { mode = 0 },
+                    Tab(selected = mode == 0, enabled = !running, onClick = { mode = 0; results = emptyList() },
                         text = { Text("📍 One place") })
-                    Tab(selected = mode == 1, enabled = !running, onClick = { mode = 1 },
+                    Tab(selected = mode == 1, enabled = !running, onClick = { mode = 1; results = emptyList() },
                         text = { Text("🚗 Travel A → B") })
                 }
 
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
-                    singleLine = true,
-                    placeholder = {
-                        Text(
-                            if (mode == 0) "Search any place or paste lat, lng"
-                            else "Search place for ${if (active == 0) "A (start)" else "B (destination)"}"
-                        )
-                    },
-                    trailingIcon = {
-                        if (searching) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                        else IconButton(onClick = { doSearch() }) { Icon(Icons.Default.Search, "Search") }
-                    },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { doSearch() })
-                )
+                if (mode == 0) {
+                    SearchField(
+                        tag = null, value = query, onChange = { query = it },
+                        hint = "Search any place or paste lat, lng",
+                        busy = searching == 0, enabled = true
+                    ) { doSearch(0, query) }
+                } else {
+                    SearchField(
+                        tag = "A", color = Color(0xFF2E7D32), value = textA, onChange = { textA = it },
+                        hint = "From: search start place",
+                        busy = searching == 1, enabled = !travelling
+                    ) { doSearch(1, textA) }
+                    SearchField(
+                        tag = "B", color = Color(0xFFC62828), value = textB, onChange = { textB = it },
+                        hint = "To: search destination",
+                        busy = searching == 2, enabled = !travelling
+                    ) { doSearch(2, textB) }
+                }
 
-                Box(Modifier.weight(1f).fillMaxWidth()) {
+                // ---------------- Map ----------------
+                Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
                     AndroidView(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().clipToBounds(),
                         factory = { c ->
                             MapView(c).apply {
                                 setMultiTouchControls(true)
@@ -388,16 +432,19 @@ class MainActivity : ComponentActivity() {
                                 controller.setCenter(GeoPoint(start.lat, start.lng))
                                 overlays.add(MapEventsOverlay(object : MapEventsReceiver {
                                     override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
-                                        pick(p.latitude, p.longitude, false)
+                                        onMapTap(p)
                                         return true
                                     }
-                                    override fun longPressHelper(p: GeoPoint): Boolean = false
+                                    override fun longPressHelper(p: GeoPoint): Boolean {
+                                        onMapTap(p)
+                                        return true
+                                    }
                                 }))
                                 val l = MapLayers(this, c)
                                 overlays.addAll(l.all)
                                 overlays.add(ScaleBarOverlay(this).apply {
                                     setAlignBottom(true)
-                                    setScaleBarOffset(20, 40)
+                                    setScaleBarOffset(20, 20)
                                 })
                                 applyStyle(this, l, mapStyle)
                                 layers = l
@@ -427,10 +474,9 @@ class MainActivity : ComponentActivity() {
                                 if (t != null) {
                                     val gp = GeoPoint(t.pos.lat, t.pos.lng)
                                     l.cur.position = gp
-                                    // Keep the moving dot on screen.
                                     if (mode == 1 && !mv.boundingBox.contains(gp)) mv.controller.animateTo(gp)
                                 }
-                                // Show every search result as a pin; tap a pin to choose it.
+                                // Every search result as an orange pin; tap a pin to choose it.
                                 val res = results
                                 if (res !== l.shownResults) {
                                     l.resultMarkers.forEach { mv.overlays.remove(it) }
@@ -443,8 +489,7 @@ class MainActivity : ComponentActivity() {
                                             title = p.name
                                             infoWindow = null
                                             setOnMarkerClickListener { _, _ ->
-                                                results = emptyList()
-                                                pick(p.lat, p.lng, true)
+                                                choose(resultsFor, p)
                                                 true
                                             }
                                         }
@@ -458,29 +503,42 @@ class MainActivity : ComponentActivity() {
                         }
                     )
 
+                    // Crosshair at the centre of the map
+                    if (!travelling) {
+                        Box(Modifier.align(Alignment.Center).size(30.dp, 2.dp).background(Color(0xCC000000)))
+                        Box(Modifier.align(Alignment.Center).size(2.dp, 30.dp).background(Color(0xCC000000)))
+                    }
+
                     if (results.isNotEmpty()) {
                         Card(
-                            Modifier.padding(start = 10.dp, end = 64.dp, top = 10.dp).fillMaxWidth().heightIn(max = 200.dp),
+                            Modifier.align(Alignment.TopStart)
+                                .padding(start = 8.dp, end = 60.dp, top = 8.dp)
+                                .fillMaxWidth().heightIn(max = 190.dp),
                             elevation = CardDefaults.cardElevation(6.dp)
                         ) {
                             Column(Modifier.verticalScroll(rememberScrollState())) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        "${results.size} places · tap an orange pin or a name",
-                                        Modifier.weight(1f).padding(12.dp), fontWeight = FontWeight.Bold, fontSize = 13.sp
+                                        when (resultsFor) {
+                                            1 -> "Choose start (A)"
+                                            2 -> "Choose destination (B)"
+                                            else -> "Choose a place"
+                                        } + " · ${results.size} found",
+                                        Modifier.weight(1f).padding(start = 12.dp),
+                                        fontWeight = FontWeight.Bold, fontSize = 13.sp
                                     )
                                     IconButton(onClick = { results = emptyList() }) { Icon(Icons.Default.Close, "Close") }
                                 }
                                 results.forEach { p ->
                                     Row(
                                         Modifier.fillMaxWidth()
-                                            .clickable { results = emptyList(); pick(p.lat, p.lng, true) }
-                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                            .clickable { choose(resultsFor, p) }
+                                            .padding(horizontal = 12.dp, vertical = 9.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(Icons.Default.LocationOn, null, tint = MaterialTheme.colorScheme.primary)
+                                        Icon(Icons.Default.LocationOn, null, tint = Color(0xFFEF6C00))
                                         Spacer(Modifier.width(8.dp))
-                                        Text(p.name, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        Text(p.name, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                     }
                                     HorizontalDivider()
                                 }
@@ -514,6 +572,23 @@ class MainActivity : ComponentActivity() {
                         if (mode == 1 && route != null) MapBtn("⤢") { route?.let { fit(mapView, it.pts) } }
                     }
 
+                    // "Set here" buttons for the crosshair
+                    if (!travelling && results.isEmpty()) {
+                        Row(
+                            Modifier.align(Alignment.BottomCenter).padding(bottom = 36.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (mode == 0) {
+                                Pill("📍 Set here", MaterialTheme.colorScheme.primary) {
+                                    mapCenter()?.let { moveTo(it.lat, it.lng, false) }
+                                }
+                            } else {
+                                Pill("Set A here", Color(0xFF2E7D32)) { mapCenter()?.let { setAB(1, it, null, false) } }
+                                Pill("Set B here", Color(0xFFC62828)) { mapCenter()?.let { setAB(2, it, null, false) } }
+                            }
+                        }
+                    }
+
                     Text(
                         mapStyle.attribution, fontSize = 9.sp, color = Color.DarkGray,
                         modifier = Modifier.align(Alignment.BottomEnd)
@@ -524,230 +599,261 @@ class MainActivity : ComponentActivity() {
                         Text(
                             if (travelling) "● LIVE TRIP ON" else "● FAKE LOCATION ON",
                             color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                            modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
+                            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
                                 .background(Color(0xFF2E7D32), RoundedCornerShape(12.dp))
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }
                 }
 
-                // Bottom panel
+                // ---------------- Bottom panel ----------------
                 Surface(shadowElevation = 8.dp) {
-                    Column(
-                        Modifier.fillMaxWidth().heightIn(max = 380.dp)
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        if (mode == 0) {
-                            Text("Tap the map to choose a place", fontSize = 12.sp, color = Color.Gray)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    "%.6f, %.6f".format(lat, lng),
-                                    Modifier.weight(1f), fontSize = 17.sp, fontWeight = FontWeight.SemiBold
-                                )
-                                IconButton(onClick = { showCoords = true }) { Icon(Icons.Default.Edit, "Enter coordinates") }
-                                IconButton(onClick = { showSave = true }) { Icon(Icons.Default.Star, "Save place") }
-                            }
-                        } else {
-                            Text(
-                                if (travelling) "Trip in progress" else "Tap A or B, then tap the map or search",
-                                fontSize = 12.sp, color = Color.Gray
-                            )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Slot("A  Start", Color(0xFF2E7D32), pointA, active == 0, Modifier.weight(1f)) { active = 0 }
-                                TextButton(onClick = {
-                                    if (!travelling) {
-                                        val a = pointA; pointA = pointB; pointB = a
-                                        prefs.putPt("a", pointA); prefs.putPt("b", pointB)
+                    Column(Modifier.fillMaxWidth()) {
+                        Text(
+                            if (panelOpen) "▼  Hide controls" else "▲  Show controls",
+                            fontSize = 12.sp, color = Color.Gray,
+                            modifier = Modifier.fillMaxWidth().clickable { panelOpen = !panelOpen }
+                                .padding(vertical = 4.dp),
+                            textAlign = TextAlign.Center
+                        )
+                        Column(
+                            Modifier.fillMaxWidth()
+                                .heightIn(max = (screenH * 0.42f).dp)
+                                .verticalScroll(rememberScrollState())
+                                .padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            if (panelOpen) {
+                                if (mode == 0) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            "%.6f, %.6f".format(lat, lng),
+                                            Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.SemiBold
+                                        )
+                                        IconButton(onClick = { showCoords = true }) { Icon(Icons.Default.Edit, "Enter coordinates") }
+                                        IconButton(onClick = { showSave = true }) { Icon(Icons.Default.Star, "Save place") }
                                     }
-                                }) { Text("⇄", fontSize = 20.sp) }
-                                Slot("B  Destination", Color(0xFFC62828), pointB, active == 1, Modifier.weight(1f)) { active = 1 }
-                                IconButton(onClick = { showCoords = true }) { Icon(Icons.Default.Edit, "Enter coordinates") }
-                            }
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                items(RouteType.entries) { t ->
-                                    FilterChip(
-                                        selected = routeType == t,
-                                        enabled = !travelling,
-                                        onClick = { routeType = t; prefs.routeType = t },
-                                        label = { Text(t.label) }
-                                    )
+                                } else {
+                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        items(RouteType.entries) { t ->
+                                            FilterChip(
+                                                selected = routeType == t,
+                                                enabled = !travelling,
+                                                onClick = { routeType = t; prefs.routeType = t },
+                                                label = { Text(t.label) }
+                                            )
+                                        }
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("Speed", fontSize = 14.sp)
+                                        Slider(
+                                            value = speed.toFloat().coerceIn(1f, 200f),
+                                            onValueChange = { MockLocationService.speedKmh.value = it.roundToInt().toDouble() },
+                                            onValueChangeFinished = { prefs.speed = MockLocationService.speedKmh.value },
+                                            valueRange = 1f..200f,
+                                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+                                        )
+                                        Text(
+                                            "%.0f km/h ✎".format(speed), fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.clickable { showSpeed = true }
+                                        )
+                                    }
+                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        items(SPEED_PRESETS) { (label, kmh) ->
+                                            AssistChip(
+                                                onClick = {
+                                                    MockLocationService.speedKmh.value = kmh.toDouble()
+                                                    prefs.speed = kmh.toDouble()
+                                                },
+                                                label = { Text("$label $kmh") }
+                                            )
+                                        }
+                                    }
+
+                                    val t = trip
+                                    if (travelling && t != null) {
+                                        LinearProgressIndicator(
+                                            progress = { if (t.total > 0) (t.covered / t.total).toFloat() else 1f },
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                        )
+                                        val left = t.total - t.covered
+                                        Text(
+                                            if (t.arrived) "✅ Arrived at B · ${Geo.formatKm(t.total)} travelled"
+                                            else "${Geo.formatKm(t.covered)} of ${Geo.formatKm(t.total)} · " +
+                                                "${Geo.formatTime(left / (speed / 3.6))} left" +
+                                                if (paused) " · PAUSED" else "",
+                                            fontSize = 14.sp, fontWeight = FontWeight.SemiBold
+                                        )
+                                    } else {
+                                        val r = route
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                when {
+                                                    pointA == null && pointB == null -> "Set A (start) and B (destination): search above, tap the map, or use Set A / B here"
+                                                    pointA == null -> "Now set A (start)"
+                                                    pointB == null -> "Now set B (destination)"
+                                                    routing -> "Finding route…"
+                                                    r != null -> "${Geo.formatKm(r.length)} · about " +
+                                                        Geo.formatTime(r.length / (speed / 3.6)) + " at %.0f km/h".format(speed)
+                                                    else -> ""
+                                                },
+                                                Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold
+                                            )
+                                            if (pointA != null || pointB != null) {
+                                                TextButton(onClick = {
+                                                    val a = pointA; val ta = textA
+                                                    pointA = pointB; textA = textB
+                                                    pointB = a; textB = ta
+                                                    prefs.putPt("a", pointA); prefs.putName("a", textA)
+                                                    prefs.putPt("b", pointB); prefs.putName("b", textB)
+                                                }) { Text("⇅ Swap") }
+                                            }
+                                        }
+                                        routeNote?.let { Text(it, fontSize = 12.sp, color = Color(0xFFE65100)) }
+                                    }
                                 }
-                            }
 
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Speed", fontSize = 14.sp)
-                                Slider(
-                                    value = speed.toFloat().coerceIn(1f, 200f),
-                                    onValueChange = { MockLocationService.speedKmh.value = it.roundToInt().toDouble() },
-                                    onValueChangeFinished = { prefs.speed = MockLocationService.speedKmh.value },
-                                    valueRange = 1f..200f,
-                                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
-                                )
-                                Text(
-                                    "%.0f km/h".format(speed), fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.clickable { showSpeed = true }
-                                )
-                            }
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                items(SPEED_PRESETS) { (label, kmh) ->
-                                    AssistChip(
-                                        onClick = {
-                                            MockLocationService.speedKmh.value = kmh.toDouble()
-                                            prefs.speed = kmh.toDouble()
-                                        },
-                                        label = { Text("$label $kmh") }
-                                    )
-                                }
-                            }
-
-                            val t = trip
-                            if (travelling && t != null) {
-                                LinearProgressIndicator(
-                                    progress = { if (t.total > 0) (t.covered / t.total).toFloat() else 1f },
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                )
-                                val left = t.total - t.covered
-                                Text(
-                                    if (t.arrived) "✅ Arrived at B · ${Geo.formatKm(t.total)} travelled"
-                                    else "${Geo.formatKm(t.covered)} of ${Geo.formatKm(t.total)} · " +
-                                        "${Geo.formatTime(left / (speed / 3.6))} left" +
-                                        if (paused) " · PAUSED" else "",
-                                    fontSize = 14.sp, fontWeight = FontWeight.SemiBold
-                                )
-                            } else {
-                                val r = route
-                                Text(
-                                    when {
-                                        pointA == null || pointB == null -> "Set A and B to plan the trip"
-                                        routing -> "Finding route…"
-                                        r != null -> "Distance ${Geo.formatKm(r.length)} · takes about " +
-                                            Geo.formatTime(r.length / (speed / 3.6)) + " at %.0f km/h".format(speed)
-                                        else -> ""
-                                    },
-                                    fontSize = 14.sp, fontWeight = FontWeight.SemiBold
-                                )
-                                routeNote?.let { Text(it, fontSize = 12.sp, color = Color(0xFFE65100)) }
-                            }
-                        }
-
-                        if (favorites.isNotEmpty()) {
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                items(favorites) { f ->
-                                    AssistChip(
-                                        onClick = { pick(f.lat, f.lng, true) },
-                                        label = { Text("⭐ " + f.name, maxLines = 1) },
-                                        trailingIcon = {
-                                            Icon(
-                                                Icons.Default.Close, "Remove",
-                                                Modifier.size(16.dp).clickable {
-                                                    favorites = favorites - f
-                                                    prefs.saveFavorites(favorites)
+                                if (favorites.isNotEmpty()) {
+                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        items(favorites) { f ->
+                                            AssistChip(
+                                                onClick = {
+                                                    if (mode == 0) moveTo(f.lat, f.lng, true)
+                                                    else if (!tripLocked()) favPick = f
+                                                },
+                                                label = { Text("⭐ " + f.name, maxLines = 1) },
+                                                trailingIcon = {
+                                                    Icon(
+                                                        Icons.Default.Close, "Remove",
+                                                        Modifier.size(16.dp).clickable {
+                                                            favorites = favorites - f
+                                                            prefs.saveFavorites(favorites)
+                                                        }
+                                                    )
                                                 }
                                             )
                                         }
+                                    }
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        if (mode == 0) "Natural movement (tiny GPS wobble)"
+                                        else "Natural driving (speed varies ±10%)",
+                                        Modifier.weight(1f), fontSize = 13.sp
                                     )
+                                    Switch(checked = drift, onCheckedChange = {
+                                        drift = it; prefs.drift = it
+                                        if (running && !travelling) MockLocationService.start(ctx, lat, lng, it)
+                                    })
+                                }
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = { showPresent = true },
+                                        modifier = Modifier.weight(1f).height(48.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp)
+                                    ) { Text("📍 Send present\nlocation", fontSize = 13.sp, lineHeight = 15.sp, textAlign = TextAlign.Center) }
+                                    OutlinedButton(
+                                        onClick = {
+                                            if (mode == 0) {
+                                                mode = 1
+                                                toast("Live location: set A and B, then tap Send live location")
+                                            } else showLive = true
+                                        },
+                                        modifier = Modifier.weight(1f).height(48.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp),
+                                        enabled = !(running && !travelling)
+                                    ) { Text("🔴 Send live location\n(moving A → B)", fontSize = 13.sp, lineHeight = 15.sp, textAlign = TextAlign.Center) }
                                 }
                             }
-                        }
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                if (mode == 0) "Natural movement (tiny GPS wobble)"
-                                else "Natural driving (speed varies ±10%)",
-                                Modifier.weight(1f), fontSize = 14.sp
-                            )
-                            Switch(checked = drift, onCheckedChange = {
-                                drift = it; prefs.drift = it
-                                if (running && !travelling) MockLocationService.start(ctx, lat, lng, it)
-                            })
-                        }
-
-                        // Send to the recipient
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
-                                onClick = { showPresent = true },
-                                modifier = Modifier.weight(1f).height(48.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp)
-                            ) { Text("📍 Send present\nlocation", fontSize = 13.sp, lineHeight = 15.sp) }
-                            OutlinedButton(
-                                onClick = {
-                                    if (mode == 0) {
-                                        mode = 1
-                                        toast("Live location: set A and B, then tap Send live location")
-                                    } else showLive = true
-                                },
-                                modifier = Modifier.weight(1f).height(48.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp),
-                                enabled = !(running && !travelling)
-                            ) { Text("🔴 Send live location\n(moving A → B)", fontSize = 13.sp, lineHeight = 15.sp) }
-                        }
-
-                        if (mode == 0) {
-                            Button(
-                                onClick = {
-                                    if (running) MockLocationService.stop(ctx)
-                                    else if (checkReady()) {
-                                        MockLocationService.error.value = null
-                                        MockLocationService.start(ctx, lat, lng, drift)
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth().height(52.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (running) Color(0xFFC62828) else MaterialTheme.colorScheme.primary
-                                )
-                            ) {
-                                Text(if (running) "STOP FAKE LOCATION" else "START FAKE LOCATION", fontSize = 16.sp)
-                            }
-                        } else if (travelling) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                if (trip?.arrived != true) {
-                                    Button(
-                                        onClick = { MockLocationService.paused.value = !paused },
-                                        modifier = Modifier.weight(1f).height(52.dp)
-                                    ) { Text(if (paused) "RESUME" else "PAUSE", fontSize = 16.sp) }
-                                }
+                            // Main action button (always visible)
+                            if (mode == 0) {
                                 Button(
-                                    onClick = { MockLocationService.stop(ctx) },
-                                    modifier = Modifier.weight(1f).height(52.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
-                                ) { Text("STOP TRIP", fontSize = 16.sp) }
-                            }
-                        } else {
-                            Button(
-                                onClick = {
-                                    val r = route
-                                    when {
-                                        pointA == null || pointB == null -> toast("Set both A and B first")
-                                        routing || r == null -> toast("Please wait, finding route…")
-                                        checkReady() -> {
+                                    onClick = {
+                                        if (running) MockLocationService.stop(ctx)
+                                        else if (checkReady()) {
                                             MockLocationService.error.value = null
-                                            MockLocationService.startTravel(ctx, r, speed, drift)
-                                            pointA?.let { center(it.lat, it.lng) }
+                                            MockLocationService.start(ctx, lat, lng, drift)
                                         }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (running) Color(0xFFC62828) else MaterialTheme.colorScheme.primary
+                                    )
+                                ) {
+                                    Text(if (running) "STOP FAKE LOCATION" else "START FAKE LOCATION", fontSize = 16.sp)
+                                }
+                            } else if (travelling) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (trip?.arrived != true) {
+                                        Button(
+                                            onClick = { MockLocationService.paused.value = !paused },
+                                            modifier = Modifier.weight(1f).height(50.dp)
+                                        ) { Text(if (paused) "RESUME" else "PAUSE", fontSize = 16.sp) }
                                     }
-                                },
-                                modifier = Modifier.fillMaxWidth().height(52.dp)
-                            ) { Text("START TRIP  A → B", fontSize = 16.sp) }
+                                    Button(
+                                        onClick = { MockLocationService.stop(ctx) },
+                                        modifier = Modifier.weight(1f).height(50.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828))
+                                    ) { Text("STOP TRIP", fontSize = 16.sp) }
+                                }
+                            } else {
+                                Button(
+                                    onClick = { startTrip() },
+                                    modifier = Modifier.fillMaxWidth().height(50.dp)
+                                ) { Text("START TRIP  A → B", fontSize = 16.sp) }
+                            }
                         }
                     }
                 }
             }
         }
 
+        // ---------------- Dialogs ----------------
+
+        tapPoint?.let { p ->
+            AlertDialog(
+                onDismissRequest = { tapPoint = null },
+                title = { Text("Set this point as") },
+                text = { Text(coordText(p)) },
+                confirmButton = {
+                    TextButton(onClick = { setAB(2, p, null, false); tapPoint = null }) {
+                        Text("B  Destination", color = Color(0xFFC62828), fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { setAB(1, p, null, false); tapPoint = null }) {
+                        Text("A  Start", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                    }
+                }
+            )
+        }
+
+        favPick?.let { f ->
+            AlertDialog(
+                onDismissRequest = { favPick = null },
+                title = { Text("Use \"${f.name}\" as") },
+                confirmButton = {
+                    TextButton(onClick = { setAB(2, Pt(f.lat, f.lng), f.name, true); favPick = null }) {
+                        Text("B  Destination", color = Color(0xFFC62828), fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { setAB(1, Pt(f.lat, f.lng), f.name, true); favPick = null }) {
+                        Text("A  Start", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                    }
+                }
+            )
+        }
+
         if (showCoords) {
-            val cur = if (mode == 0) Pt(lat, lng) else (if (active == 0) pointA else pointB)
-            var text by remember { mutableStateOf(cur?.let { "%.6f, %.6f".format(it.lat, it.lng) } ?: "") }
+            var text by remember { mutableStateOf("%.6f, %.6f".format(lat, lng)) }
             AlertDialog(
                 onDismissRequest = { showCoords = false },
-                title = {
-                    Text(
-                        if (mode == 0) "Enter coordinates"
-                        else "Coordinates for ${if (active == 0) "A (start)" else "B (destination)"}"
-                    )
-                },
+                title = { Text("Enter coordinates") },
                 text = {
                     Column {
                         Text("Format: latitude, longitude (you can paste from Google Maps)", fontSize = 13.sp)
@@ -759,7 +865,7 @@ class MainActivity : ComponentActivity() {
                     TextButton(onClick = {
                         val c = PlaceSearch.parseCoords(text)
                         if (c == null) toast("Invalid coordinates") else {
-                            pick(c.first, c.second, true); showCoords = false
+                            moveTo(c.first, c.second, true); showCoords = false
                         }
                     }) { Text("Go") }
                 },
@@ -779,10 +885,7 @@ class MainActivity : ComponentActivity() {
                 title = { Text("Send present location") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            now?.let { "%.6f, %.6f".format(it.lat, it.lng) } ?: "Set a place first",
-                            fontWeight = FontWeight.Bold
-                        )
+                        Text(now?.let { coordText(it) } ?: "Set a place first", fontWeight = FontWeight.Bold)
                         Text(
                             "Sends a Google Maps pin of this place. Or, with fake location ON, open the " +
                                 "WhatsApp chat → 📎 → Location → \"Send your current location\".",
@@ -820,28 +923,18 @@ class MainActivity : ComponentActivity() {
                         Text("2. Tap 📎 → Location → Share live location", fontSize = 13.sp)
                         Text("3. Choose how long (15 min / 1 h / 8 h) → Send", fontSize = 13.sp)
                         Text(
-                            "They will see you moving from A to B at your speed. Keep this app's trip " +
-                                "running; WhatsApp updates their map every few seconds.",
+                            "They will see you moving from A to B at your speed. Keep the trip running; " +
+                                "WhatsApp updates their map every few seconds.",
                             fontSize = 12.sp, color = Color.Gray
                         )
                     }
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        val r = route
-                        if (!travelling) {
-                            when {
-                                pointA == null || pointB == null -> { toast("Set both A and B first"); return@TextButton }
-                                routing || r == null -> { toast("Please wait, finding route…"); return@TextButton }
-                                !checkReady() -> return@TextButton
-                                else -> {
-                                    MockLocationService.error.value = null
-                                    MockLocationService.startTravel(ctx, r, speed, drift)
-                                }
-                            }
+                        if (travelling || startTrip()) {
+                            showLive = false
+                            if (!Share.openWhatsApp(ctx)) toast("WhatsApp is not installed")
                         }
-                        showLive = false
-                        if (!Share.openWhatsApp(ctx)) toast("WhatsApp is not installed")
                     }) { Text(if (travelling) "Open WhatsApp" else "Start trip & open WhatsApp") }
                 },
                 dismissButton = { TextButton(onClick = { showLive = false }) { Text("Cancel") } }
@@ -893,21 +986,50 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun Slot(label: String, color: Color, p: Pt?, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-        Surface(
-            modifier = modifier.clickable(onClick = onClick),
-            shape = RoundedCornerShape(10.dp),
-            color = if (selected) color.copy(alpha = 0.08f) else Color.Transparent,
-            border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) color else Color.LightGray)
-        ) {
-            Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
-                Text(label, color = color, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                Text(
-                    p?.let { "%.4f, %.4f".format(it.lat, it.lng) } ?: "Not set",
-                    fontSize = 12.sp, maxLines = 1
-                )
-            }
-        }
+    private fun SearchField(
+        tag: String?,
+        color: Color = Color.Unspecified,
+        value: String,
+        onChange: (String) -> Unit,
+        hint: String,
+        busy: Boolean,
+        enabled: Boolean,
+        onSearch: () -> Unit
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onChange,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp),
+            singleLine = true,
+            enabled = enabled,
+            placeholder = { Text(hint, fontSize = 14.sp) },
+            leadingIcon = tag?.let {
+                {
+                    Text(
+                        it, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.size(26.dp).background(color, RoundedCornerShape(13.dp))
+                            .wrapContentHeight()
+                    )
+                }
+            },
+            trailingIcon = {
+                if (busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                else IconButton(onClick = onSearch, enabled = enabled) { Icon(Icons.Default.Search, "Search") }
+            },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { onSearch() })
+        )
+    }
+
+    @Composable
+    private fun Pill(label: String, color: Color, onClick: () -> Unit) {
+        Button(
+            onClick = onClick,
+            colors = ButtonDefaults.buttonColors(containerColor = color),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+            elevation = ButtonDefaults.buttonElevation(4.dp)
+        ) { Text(label, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
     }
 
     @Composable

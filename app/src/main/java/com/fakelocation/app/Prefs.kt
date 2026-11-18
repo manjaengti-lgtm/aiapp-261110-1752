@@ -37,6 +37,12 @@ class Prefs(ctx: Context) {
         e.apply()
     }
 
+    fun getName(key: String): String? = sp.getString("${key}_name", null)
+
+    fun putName(key: String, name: String?) {
+        sp.edit().putString("${key}_name", name).apply()
+    }
+
     var speed: Double
         get() = sp.getFloat("speed", 40f).toDouble()
         set(v) = sp.edit().putFloat("speed", v.toFloat()).apply()
