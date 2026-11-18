@@ -559,9 +559,7 @@ private fun Composer(
                         DropdownMenuItem(text = { Text("Camera") }, onClick = { attachMenu = false; onCamera() })
                         DropdownMenuItem(text = { Text("Photos") }, onClick = { attachMenu = false; onPhotos() })
                         DropdownMenuItem(text = { Text("Files (any type)") }, onClick = { attachMenu = false; onFiles() })
-                        if (vm.reaActive()) {
-                            DropdownMenuItem(text = { Text("Installed app (APK)") }, onClick = { attachMenu = false; pickApp = true })
-                        }
+                        DropdownMenuItem(text = { Text("Installed app (APK)") }, onClick = { attachMenu = false; pickApp = true })
                         androidx.compose.material3.HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text((if (vm.webSearch) "✓ " else "") + "Web search") },
