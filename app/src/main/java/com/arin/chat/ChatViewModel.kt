@@ -599,6 +599,26 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         followBuildInChat((if (restart) "Restarting " else "Resuming ") + (project?.appName ?: state.appName))
     }
 
+    /** True while a build started from THIS chat is running (the chat shows a Stop button). */
+    fun chatBuildRunning(): Boolean =
+        com.arin.builder.BuildRunner.running && chatBuildChat != null && chatBuildChat == chatId &&
+            chatBuildProject == com.arin.builder.BuildRunner.projectId
+
+    /** Stops this chat's build; what's built so far stays saved, so it can be resumed. */
+    fun stopChatBuild() {
+        val app = getApplication<Application>()
+        com.arin.builder.BuildService.stop(app)
+        chatBuildJob?.cancel()
+        replaceBuildMessage(buildProgressText("Build", done = true) + "\n\n⏹ **Stopped.** Everything built so far is saved — tap Resume to carry on.", save = true)
+        chatBuildMsg = null
+        viewModelScope.launch {
+            // Give the service a moment to wind down and save its checkpoint.
+            repeat(20) { if (!com.arin.builder.BuildRunner.running) return@repeat; kotlinx.coroutines.delay(500) }
+            com.arin.builder.BuildRunner.saveNow(app)
+            refreshChatBuild()
+        }
+    }
+
     /** Shows the build's steps live in this chat, like Build mode does. */
     private fun followBuildInChat(title: String) {
         if (chatId == null) persist()

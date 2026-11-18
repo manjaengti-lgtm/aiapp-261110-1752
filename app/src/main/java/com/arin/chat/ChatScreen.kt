@@ -500,6 +500,23 @@ private fun Composer(
                 androidx.compose.material3.TextButton(onClick = onCancelEdit) { Text("Cancel") }
             }
         }
+        // A build from this chat is running: it can be stopped here (and resumed later).
+        if (vm.chatBuildRunning()) {
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+            ) {
+                Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Building ${com.arin.builder.BuildRunner.project?.appName ?: "the app"}… progress is saved as it goes.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    androidx.compose.material3.TextButton(onClick = { vm.stopChatBuild() }) { Text("Stop") }
+                }
+            }
+        }
         // This chat's last build didn't succeed (failed, or stopped when Arin closed): resume it or restart it.
         vm.chatBuildState?.takeIf { it.outcome != "succeeded" && !vm.streaming && !com.arin.builder.BuildRunner.running }?.let { b ->
             Surface(
