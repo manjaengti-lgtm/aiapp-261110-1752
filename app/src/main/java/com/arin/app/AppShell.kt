@@ -14,7 +14,7 @@ import com.arin.project.ProjectsScreen
 import com.arin.settings.SettingsScreen
 
 /** Every top-level screen. Chat is home. */
-enum class Screen { Chat, Settings, Projects, Project, Build, Logs }
+enum class Screen { Chat, Settings, Projects, Project, Build, Logs, FreeTokens }
 
 /** Owns which screen is showing. Screens never navigate themselves; they call back here. */
 @Composable
@@ -44,11 +44,13 @@ fun AppShell(vm: ChatViewModel) {
             onOpenProject = { p -> projectId = p.id; backToProjects = false; screen = Screen.Project },
             onOpenBuild = { screen = Screen.Build },
             onOpenLogs = { screen = Screen.Logs },
+            onOpenFree = { screen = Screen.FreeTokens },
             startVoice = Launch.voicePending,
             onVoiceStarted = { Launch.voicePending = false },
         )
         Screen.Settings -> SettingsScreen(vm, onBack = { screen = Screen.Chat })
         Screen.Logs -> LogsScreen(onBack = { screen = Screen.Chat })
+        Screen.FreeTokens -> com.arin.free.FreeTokensScreen(vm, onBack = { screen = Screen.Chat })
         Screen.Build -> com.arin.builder.BuildScreen(
             chat = vm,
             vm = androidx.lifecycle.viewmodel.compose.viewModel<com.arin.builder.BuildViewModel>(),

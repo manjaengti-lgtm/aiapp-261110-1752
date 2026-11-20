@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Search
@@ -57,6 +58,7 @@ fun ChatsDrawer(
     onProjects: () -> Unit,
     onBuild: () -> Unit = {},
     onLogs: () -> Unit = {},
+    onFree: () -> Unit = {},
     onProject: (com.arin.data.Project) -> Unit,
 ) {
     var renaming by remember { mutableStateOf<ChatSummary?>(null) }
@@ -148,6 +150,7 @@ fun ChatsDrawer(
                     }
                 }
             }
+            DrawerRow(icon = { Icon(Icons.Filled.Star, contentDescription = null) }, label = "Free tokens", onClick = onFree)
             DrawerRow(icon = { Icon(Icons.Filled.Build, contentDescription = null) }, label = "Build an app (APK)", onClick = onBuild)
             DrawerRow(
                 icon = { Icon(Icons.Filled.Build, contentDescription = null) },

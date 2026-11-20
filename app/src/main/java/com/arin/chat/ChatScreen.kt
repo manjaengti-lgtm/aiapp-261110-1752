@@ -93,6 +93,7 @@ fun ChatScreen(
     onOpenProject: (com.arin.data.Project) -> Unit,
     onOpenBuild: () -> Unit = {},
     onOpenLogs: () -> Unit = {},
+    onOpenFree: () -> Unit = {},
     startVoice: Boolean = false,
     onVoiceStarted: () -> Unit = {},
 ) {
@@ -221,6 +222,7 @@ fun ChatScreen(
                 onProject = { p -> scope.launch { drawer.close() }; onOpenProject(p) },
                 onBuild = { scope.launch { drawer.close() }; onOpenBuild() },
                 onLogs = { scope.launch { drawer.close() }; onOpenLogs() },
+                onFree = { scope.launch { drawer.close() }; onOpenFree() },
             )
         },
     ) {
