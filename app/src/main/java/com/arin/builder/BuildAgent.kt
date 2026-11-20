@@ -109,7 +109,7 @@ class BuildAgent(
     private val self = req.selfUpdate || req.project?.selfUpdate == true
     private val imported = req.project?.imported == true || req.zipPath != null || self
     /** Test the built app on GitHub's emulator (not for Arin itself, nor builds made only on the phone). */
-    private val testing get() = req.testApp && !self && !localOnly
+    private val testing get() = false   // app-test temporarily disabled (restoring reliable builds)
     private val workflowFile = when {
         self -> SELF_WORKFLOW
         imported -> ProjectTemplate.IMPORT_WORKFLOW_FILE
@@ -374,8 +374,6 @@ class BuildAgent(
                     pendingFiles[".github/workflows/build.yml"] = it.toByteArray()
                 }
             }
-            // The app test runs when this script is in the repo (Settings → Test apps after building).
-            if (!self) pendingFiles[ProjectTemplate.TEST_SCRIPT_PATH] = if (testing) ProjectTemplate.testScript.toByteArray() else null
             if (useLocal) {
                 val ctx = context!!
                 LocalBuild.write(ctx, localSlug, pendingFiles.toMap())

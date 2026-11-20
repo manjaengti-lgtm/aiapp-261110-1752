@@ -1472,16 +1472,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                             } catch (e: Throwable) {
                                 // Free models sometimes send an incomplete or invalid reply the gateway drops: retry a
                                 // couple of times, continuing from the partial text so nothing already written is lost.
-                                // A dropped connection: wait and reconnect (up to ~2 minutes) instead of failing the task.
+                                // A dropped connection or a flaky gateway: retry a few times, briefly, then show the error
+                                // (don't make the person wait minutes). Progress so far is kept for Resume.
                                 val network = e is java.io.IOException || Prompt.isRetryable(e.message)
-                                val maxTries = if (e is java.io.IOException) 7 else 2
+                                val maxTries = 3
                                 if (streamRetries < maxTries && network) {
                                     streamRetries++
-                                    val wait = if (e is java.io.IOException) listOf(3, 5, 10, 15, 20, 30, 30)[streamRetries - 1] else 1
+                                    val wait = listOf(2, 3, 5)[streamRetries - 1]
                                     for (left in wait downTo 1) {
-                                        run.status = if (e is java.io.IOException) "Connection lost — reconnecting in ${left}s (try $streamRetries of $maxTries). Your progress is kept."
-                                            else if (text.isEmpty()) "The model hiccuped — retrying…"
-                                            else "The model's reply cut off — continuing from where it stopped…"
+                                        run.status = if (text.isEmpty()) "Retrying… (${streamRetries}/$maxTries)"
+                                            else "Reply cut off — continuing where it stopped… (${streamRetries}/$maxTries)"
                                         kotlinx.coroutines.delay(1_000)
                                     }
                                     run.status = null
@@ -1835,9 +1835,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 runs.remove(run.chat)
                 if (run.chat == chatKey()) {
-                    // This chat is open: show the answer here.
-                    messages.clear()
-                    messages.addAll(run.base + msg)
+                    // This chat is open: show the answer here. Append in place (no full-list rebuild) when nothing
+                    // moved; only realign if the user navigated away and back during the reply.
+                    if (messages.size != run.base.size || messages.lastOrNull()?.id != run.base.lastOrNull()?.id) {
+                        messages.clear(); messages.addAll(run.base)
+                    }
+                    messages.add(msg)
                     persist()
                     lastFinished = msg
                 } else if (run.chat != TEMP_CHAT) {
