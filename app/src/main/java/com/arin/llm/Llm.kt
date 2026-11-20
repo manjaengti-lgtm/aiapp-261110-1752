@@ -57,34 +57,49 @@ object Llm {
         fun pol(m: String) = FreeTarget("$FREE_BASE/openai", emptyMap(), m, true)
         fun llm7(m: String) = FreeTarget("$LLM7_BASE/chat/completions", bearer("unused"), m, false)
         val chosen = if (model.startsWith(LLM7_PREFIX)) llm7(model.removePrefix(LLM7_PREFIX)) else pol(model)
-        val fallbacks = listOf(pol("openai"), llm7("gpt-4o-mini"), llm7("deepseek-r1"), pol("mistral"))
+        val fallbacks = listOf(pol("openai"), llm7("gpt-4o-mini"), pol("mistral"), llm7("deepseek-r1"))
         return (listOf(chosen) + fallbacks).distinctBy { it.url + "|" + it.model }
     }
 
+    /** How long a free model may take to send its first word before Arin gives up and tries a faster free model. */
+    private const val FREE_FIRST_TOKEN_MS = 9_000L
+
     /**
-     * Free models with automatic fallover: if the chosen keyless model is rate-limited or errors before it has
-     * written anything, Arin quietly moves to the next free model (and the other free provider) — zero user input.
+     * Free models with automatic fallover: if the chosen keyless model errors, is rate-limited, OR is just slow to
+     * start (a queued free proxy), Arin quietly switches to the next free model — so a reply still comes quickly.
      */
     private fun freeStream(model: String, system: String, turns: List<Turn>, maxTokens: Int?): Flow<Delta> =
-        kotlinx.coroutines.flow.flow {
+        kotlinx.coroutines.flow.channelFlow {
             val targets = freeTargets(model)
             var last: Throwable? = null
             for ((i, t) in targets.withIndex()) {
-                var emitted = false
-                try {
-                    openAiStream(t.url, t.headers, t.model, system, turns, extra = t.extra, maxTokens = maxTokens).collect { d ->
-                        emitted = true
-                        emit(d)
+                val inner = kotlinx.coroutines.channels.Channel<Delta>(kotlinx.coroutines.channels.Channel.BUFFERED)
+                val job = launch(kotlinx.coroutines.Dispatchers.Default) {
+                    try {
+                        openAiStream(t.url, t.headers, t.model, system, turns, extra = t.extra, maxTokens = maxTokens).collect { inner.send(it) }
+                        inner.close()
+                    } catch (e: Throwable) {
+                        inner.close(e)
                     }
-                    return@flow
-                } catch (e: Throwable) {
-                    last = e
-                    // Once text has started, or on the last target, or on a non-transient error, give up on fallover.
-                    if (emitted || i == targets.lastIndex || e is kotlinx.coroutines.CancellationException ||
-                        !(Prompt.isRetryable(e.message) || (e.message ?: "").contains("429") || (e.message ?: "").contains("rate", true))) throw e
                 }
+                // Wait for the FIRST word, with a deadline. No deadline once words are flowing.
+                val first = kotlinx.coroutines.withTimeoutOrNull(FREE_FIRST_TOKEN_MS) { inner.receiveCatching() }
+                if (first == null) {
+                    job.cancel(); last = LlmException("A free model was slow to start; Arin switched to a faster one."); continue
+                }
+                if (first.isClosed) {
+                    last = first.exceptionOrNull() ?: last
+                    job.cancel()
+                    if (i == targets.lastIndex) throw (last ?: LlmException("No free model answered."))
+                    continue
+                }
+                // First word arrived: commit to this free model and forward the whole reply.
+                send(first.getOrThrow())
+                for (d in inner) send(d)
+                job.join()
+                return@channelFlow
             }
-            last?.let { throw it }
+            throw (last ?: LlmException("No free model answered."))
         }
 
     /** The provider's current models, newest-looking first; falls back to the built-in list. */
