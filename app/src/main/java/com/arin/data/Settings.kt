@@ -193,6 +193,8 @@ data class SavedApi(
     val model: String = "",
     /** Unique per saved API, so several can share one base URL (different keys or models). Blank = saved before ids. */
     val id: String = "",
+    /** Part of the keyless/keyed "Free" pool (added in the Free tokens tab): routed under Free with fallover. */
+    val free: Boolean = false,
 ) {
     /** Stable key for storage: the id, or the address for APIs saved by older versions. */
     val slotId: String get() = id.ifBlank { "url:$baseUrl" }

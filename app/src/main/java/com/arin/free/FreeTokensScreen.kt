@@ -50,7 +50,7 @@ fun FreeTokensScreen(vm: ChatViewModel, onBack: () -> Unit) {
         ) {
             Text(
                 "Free AI for Arin. The keyless option works right away with nothing to set up. " +
-                    "For about a billion tokens a month, add one free key once — Arin remembers it and lets you pick it in any chat.",
+                    "Add each provider's free key once (no card for most). Arin pools them under \"Free\" with automatic fallover, and each is also pickable in any chat. Stack several to reach billions of free tokens a month.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -94,12 +94,15 @@ private fun FreeCard(vm: ChatViewModel, p: FreeProvider, onBack: () -> Unit) {
                     Button(
                         enabled = key.isNotBlank(),
                         onClick = {
-                            problem = vm.saveApi(null, "${p.name} (free)", p.baseUrl, key, p.model, ApiFormat.OpenAI)
+                            problem = vm.saveApi(null, "${p.name} (free)", p.baseUrl, key, p.model, ApiFormat.OpenAI, free = true)
                             if (problem == null) onBack()
                         },
                     ) { Text(if (added) "Update key" else "Save & use") }
                 }
-                if (added) Text("✓ Added — pick \"${p.name} (free)\" from the model menu in any chat.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                if (added) {
+                    Text("✓ Added to your free pool — used under \"Free\", and pickable in any chat's model menu.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    OutlinedButton(onClick = { vm.savedApis.firstOrNull { it.baseUrl == p.baseUrl }?.let { vm.removeSavedApi(it) } }) { Text("Remove") }
+                }
             }
         }
     }

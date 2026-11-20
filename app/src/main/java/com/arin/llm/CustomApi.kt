@@ -69,6 +69,12 @@ object CustomApi {
     /** The API in use right now, as a fixed [Endpoint]. */
     fun current(): Endpoint = Endpoint(baseUrl, format)
 
+    /** One free provider the person added in the Free tokens tab (OpenAI-compatible). */
+    data class FreeEntry(val baseUrl: String, val model: String, val key: String)
+
+    /** Free providers the person added, pooled under the Free provider with fallover. Updated by the app. */
+    @Volatile var freePool: List<FreeEntry> = emptyList()
+
     @Volatile var baseUrl: String = DEFAULT_BASE
     @Volatile var format: ApiFormat = ApiFormat.OpenAI
     /** A model id typed by the person, for services with no model list or unlisted models. */

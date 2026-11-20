@@ -556,6 +556,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     init {
         // When a build ends, post the result in this chat with real download links.
         com.arin.builder.BuildRunner.onFinished = { result, project, session -> postBuildResult(result, project, session) }
+        syncFreePool()
     }
 
     // ---------------- Builds started from chat stay in chat ----------------
@@ -2208,6 +2209,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun removeSavedApi(api: com.arin.data.SavedApi) {
+        syncFreePoolSoon()
         savedApis.removeAll { it.slotId == api.slotId }
         settings.savedApis = savedApis.toList()
         settings.setApiKey(api, "")
@@ -2359,12 +2361,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
      * Adds a new API, or changes [old], from one form: name, base URL, key, model and format.
      * Any number can be saved, including several for the same base URL. Returns a problem to show, or null.
      */
-    fun saveApi(old: com.arin.data.SavedApi?, name: String, url: String, key: String, model: String, format: com.arin.llm.ApiFormat): String? {
+    fun saveApi(old: com.arin.data.SavedApi?, name: String, url: String, key: String, model: String, format: com.arin.llm.ApiFormat, free: Boolean = false): String? {
         val base = com.arin.llm.CustomApi.normalize(url, format)
         if (base.isBlank()) return "Enter the base URL, e.g. https://example.com/v1"
         if (!base.startsWith("https://") && !base.startsWith("http://")) return "The base URL must start with https://"
         val id = old?.id?.ifBlank { null } ?: java.util.UUID.randomUUID().toString()
-        val api = com.arin.data.SavedApi(name.trim().ifBlank { com.arin.llm.CustomApi.label(base) }, base, format.name, model.trim(), id)
+        val api = com.arin.data.SavedApi(name.trim().ifBlank { com.arin.llm.CustomApi.label(base) }, base, format.name, model.trim(), id, free = free || old?.free == true)
         // A key left empty while editing keeps the one already saved.
         val keep = old?.let { settings.apiKey(it) }.orEmpty()
         if (old != null && old.slotId != api.slotId) settings.setApiKey(old, "")
@@ -2375,8 +2377,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         savedApis.clear()
         savedApis.addAll(list)
         settings.savedApis = list
+        syncFreePool()
         useSavedApi(api)
         return null
+    }
+
+    private fun syncFreePoolSoon() { viewModelScope.launch { kotlinx.coroutines.yield(); syncFreePool() } }
+
+    /** Pushes the free providers the person added into the pool the Free provider falls over across. */
+    fun syncFreePool() {
+        com.arin.llm.CustomApi.freePool = savedApis.filter { it.free && it.format == "OpenAI" }
+            .mapNotNull { a -> settings.apiKey(a).takeIf { it.isNotBlank() }?.let { com.arin.llm.CustomApi.FreeEntry(a.baseUrl, a.model, it) } }
     }
 
     fun hasKeyFor(api: com.arin.data.SavedApi) = settings.apiKey(api).isNotBlank()

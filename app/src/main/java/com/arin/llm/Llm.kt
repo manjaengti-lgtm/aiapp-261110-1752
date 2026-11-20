@@ -58,8 +58,10 @@ object Llm {
         fun pol(m: String) = FreeTarget("$FREE_BASE/openai", emptyMap(), m, true)
         fun llm7(m: String) = FreeTarget("$LLM7_BASE/chat/completions", bearer("unused"), m, false)
         val chosen = if (model.startsWith(LLM7_PREFIX)) llm7(model.removePrefix(LLM7_PREFIX)) else pol(model)
-        val fallbacks = listOf(pol("openai"), llm7("gpt-4o-mini"), pol("mistral"), llm7("deepseek-r1"))
-        return (listOf(chosen) + fallbacks).distinctBy { it.url + "|" + it.model }
+        // The person's own free keys (Free tokens tab) — bigger and faster, so they come before the keyless fallbacks.
+        val pooled = CustomApi.freePool.map { FreeTarget("${it.baseUrl}/chat/completions", bearer(it.key), it.model.ifBlank { "auto" }, false) }
+        val keyless = listOf(pol("openai"), llm7("gpt-4o-mini"), pol("mistral"), llm7("deepseek-r1"))
+        return (listOf(chosen) + pooled + keyless).distinctBy { it.url + "|" + it.model }
     }
 
     /** How long a free model may take to send its first word before Arin gives up and tries a faster free model. */
