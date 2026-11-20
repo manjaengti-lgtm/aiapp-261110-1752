@@ -556,7 +556,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     init {
         // When a build ends, post the result in this chat with real download links.
         com.arin.builder.BuildRunner.onFinished = { result, project, session -> postBuildResult(result, project, session) }
-        syncFreePool()
     }
 
     // ---------------- Builds started from chat stay in chat ----------------
@@ -1283,6 +1282,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val m = model
         val key = settings.key(p)
         // This chat's API stays fixed for the whole reply, even if another chat switches to a different one.
+        if (p == Provider.Free) syncFreePool()
         val endpoint = if (p == Provider.Custom) com.arin.llm.CustomApi.current() else null
         val project = chatProject
         // REA is active in the chat named "Reverse engineering", or wherever it's switched on from the ⋮ menu.
