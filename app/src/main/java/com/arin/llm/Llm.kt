@@ -18,6 +18,9 @@ import kotlinx.serialization.json.putJsonObject
  */
 object Llm {
     private const val FREE_BASE = "https://text.pollinations.ai"
+    // A second keyless, OpenAI-compatible free source (no account, no key). Its models are tagged with this prefix.
+    private const val LLM7_BASE = "https://api.llm7.io/v1"
+    private const val LLM7_PREFIX = "llm7:"
     private const val GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
     private const val OPENAI_BASE = "https://api.openai.com/v1"
     private const val ANTHROPIC_BASE = "https://api.anthropic.com/v1"
@@ -33,7 +36,7 @@ object Llm {
         }
         if (model.isBlank()) throw LlmException("Pick a model first, or type a model id in Settings → Custom API.")
         return when (provider) {
-            Provider.Free -> openAiStream("$FREE_BASE/openai", emptyMap(), model, system, turns, extra = true, maxTokens = maxTokens)
+            Provider.Free -> freeStream(model, system, turns, maxTokens)
             Provider.Gemini -> openAiStream("$GEMINI_BASE/chat/completions", bearer(key), model, system, turns, maxTokens = maxTokens)
             // OpenAI's newer models take max_completion_tokens; leave ChatGPT on its default.
             Provider.ChatGPT -> openAiStream("$OPENAI_BASE/chat/completions", bearer(key), model, system, turns)
@@ -47,13 +50,51 @@ object Llm {
         }
     }
 
+    private data class FreeTarget(val url: String, val headers: Map<String, String>, val model: String, val extra: Boolean)
+
+    /** The free sources to try, the picked model first, then keyless fallbacks across both providers. */
+    private fun freeTargets(model: String): List<FreeTarget> {
+        fun pol(m: String) = FreeTarget("$FREE_BASE/openai", emptyMap(), m, true)
+        fun llm7(m: String) = FreeTarget("$LLM7_BASE/chat/completions", bearer("unused"), m, false)
+        val chosen = if (model.startsWith(LLM7_PREFIX)) llm7(model.removePrefix(LLM7_PREFIX)) else pol(model)
+        val fallbacks = listOf(pol("openai"), llm7("gpt-4o-mini"), llm7("deepseek-r1"), pol("mistral"))
+        return (listOf(chosen) + fallbacks).distinctBy { it.url + "|" + it.model }
+    }
+
+    /**
+     * Free models with automatic fallover: if the chosen keyless model is rate-limited or errors before it has
+     * written anything, Arin quietly moves to the next free model (and the other free provider) — zero user input.
+     */
+    private fun freeStream(model: String, system: String, turns: List<Turn>, maxTokens: Int?): Flow<Delta> =
+        kotlinx.coroutines.flow.flow {
+            val targets = freeTargets(model)
+            var last: Throwable? = null
+            for ((i, t) in targets.withIndex()) {
+                var emitted = false
+                try {
+                    openAiStream(t.url, t.headers, t.model, system, turns, extra = t.extra, maxTokens = maxTokens).collect { d ->
+                        emitted = true
+                        emit(d)
+                    }
+                    return@flow
+                } catch (e: Throwable) {
+                    last = e
+                    // Once text has started, or on the last target, or on a non-transient error, give up on fallover.
+                    if (emitted || i == targets.lastIndex || e is kotlinx.coroutines.CancellationException ||
+                        !(Prompt.isRetryable(e.message) || (e.message ?: "").contains("429") || (e.message ?: "").contains("rate", true))) throw e
+                }
+            }
+            last?.let { throw it }
+        }
+
     /** The provider's current models, newest-looking first; falls back to the built-in list. */
     suspend fun models(provider: Provider, key: String): List<ModelOption> {
         val fallback = DefaultModels.of(provider)
         if (provider.needsKey && key.isBlank()) return fallback
         val found = runCatching {
             when (provider) {
-                Provider.Free -> freeModels()
+                Provider.Free -> (runCatching { freeModels() }.getOrDefault(emptyList()) + runCatching { llm7Models() }.getOrDefault(emptyList()))
+                    .ifEmpty { fallback }
                 Provider.Claude -> listIds("$ANTHROPIC_BASE/models", anthropicHeaders(key), "data", "id", "display_name")
                 Provider.Gemini -> listIds("$GEMINI_BASE/models", bearer(key), "data", "id", null)
                     .filter { it.id.contains("gemini") }
@@ -123,6 +164,18 @@ object Llm {
             val desc = (o["description"] as? JsonPrimitive)?.contentOrNull?.substringBefore(" (")
             ModelOption(name, "${desc ?: name} (free)")
         }
+    }
+
+    /** Keyless free models from LLM7 (no account). Text chat models only. */
+    private suspend fun llm7Models(): List<ModelOption> {
+        val root = Http.getJson("$LLM7_BASE/models")
+        val arr = (root as? JsonObject)?.get("data") as? JsonArray ?: root as? JsonArray ?: return emptyList()
+        val skip = listOf("flux", "sd", "dall", "whisper", "tts", "image", "embed", "audio", "vision")
+        return arr.mapNotNull { el ->
+            val id = ((el as? JsonObject)?.get("id") as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+            if (skip.any { id.contains(it, true) }) return@mapNotNull null
+            ModelOption("$LLM7_PREFIX$id", "$id (free · LLM7)")
+        }.take(14)
     }
 
     private fun openAiStream(
