@@ -496,6 +496,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshClaudeCode() {
         val app = getApplication<Application>()
         ArinApp.scope.launch {
+            loadCcChat()
             ccInstalled = com.arin.terminal.Linux.installed(app) && com.arin.claudecode.ClaudeCode.installed(app)
             ccConnected = ccInstalled && com.arin.claudecode.ClaudeCode.connected(app)
         }
@@ -581,23 +582,40 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ---- Claude Code chat: the person's custom API is the brain, Claude Code is the tool ----
+    // ---- Claude Code chat: the brain is the person's custom API or Claude Pro login; Claude Code is the tool ----
 
     data class CcMessage(val fromUser: Boolean, val text: String, val steps: List<String> = emptyList(), val running: Boolean = false, val error: Boolean = false)
 
     val ccMessages = mutableStateListOf<CcMessage>()
-    var ccModels by mutableStateOf(settings.ccCustomModels)
+    /** "pro" = Claude Pro/Max (Google account) login, "custom" = own API. Chosen in Settings. */
+    var ccBackend by mutableStateOf(settings.ccBackend)
         private set
-    var ccModel by mutableStateOf(settings.ccCustomModel)
-        private set
-    var ccApiConnected by mutableStateOf(settings.ccCustomBase.isNotBlank() && settings.ccCustomKey.isNotBlank() && settings.ccCustomModel.isNotBlank())
-        private set
+    private var ccCustomModels by mutableStateOf(settings.ccCustomModels)
+    private var ccCustomModelState by mutableStateOf(settings.ccCustomModel)
+    private var ccProModelState by mutableStateOf(settings.ccProModel)
+    private var ccCustomReady by mutableStateOf(settings.ccCustomBase.isNotBlank() && settings.ccCustomKey.isNotBlank() && settings.ccCustomModel.isNotBlank())
+
+    /** Models to pick from in the Claude Code header, for the login in use. */
+    val ccModels: List<String> get() = if (ccBackend == "pro") com.arin.claudecode.ClaudeCode.PRO_MODELS else ccCustomModels
+    val ccModel: String get() = if (ccBackend == "pro") ccProModelState else ccCustomModelState
+    /** Signed in with the login chosen in Settings, so the chat can run. */
+    val ccSignedIn: Boolean get() = if (ccBackend == "pro") ccConnected else ccCustomReady
+    /** The custom API is connected (shown in Settings). */
+    val ccApiConnected: Boolean get() = ccCustomReady
+    val ccCustomModelCount: Int get() = ccCustomModels.size
+
     var ccConnecting by mutableStateOf(false)
     var ccConnectError by mutableStateOf<String?>(null)
     var ccRunning by mutableStateOf(false)
     private var ccJob: kotlinx.coroutines.Job? = null
 
-    /** Connect with only a URL and key: finds the Anthropic endpoint and lists the models. */
+    fun setCcBackend(kind: String) {
+        if (ccRunning) return
+        ccBackend = kind
+        settings.ccBackend = kind
+    }
+
+    /** Connect with only a URL and key: finds how to talk to it and lists the models. */
     fun connectCcApi(baseUrl: String, key: String) {
         if (ccConnecting || baseUrl.isBlank() || key.isBlank()) return
         ccConnecting = true
@@ -605,13 +623,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         ArinApp.scope.launch {
             try {
                 val c = com.arin.claudecode.ClaudeCode.connect(baseUrl, key.trim())
-                settings.ccBackend = "custom"
-                settings.ccCustomBase = c.anthropicBase
+                settings.ccCustomKind = c.kind
+                settings.ccCustomBase = c.base
                 settings.ccCustomKey = key.trim()
                 settings.ccCustomModels = c.models
-                ccModels = c.models
-                if (ccModel !in c.models) selectCcModel(c.models.first())
-                ccApiConnected = true
+                ccCustomModels = c.models
+                if (ccCustomModelState !in c.models) { ccCustomModelState = c.models.first(); settings.ccCustomModel = c.models.first() }
+                ccCustomReady = true
+                setCcBackend("custom")
             } catch (e: Exception) {
                 ccConnectError = e.message ?: "Couldn't connect."
             } finally {
@@ -622,29 +641,56 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun disconnectCcApi() {
         settings.ccCustomKey = ""
-        ccApiConnected = false
+        ccCustomReady = false
     }
 
     fun selectCcModel(id: String) {
-        ccModel = id
-        settings.ccCustomModel = id
+        if (ccBackend == "pro") { ccProModelState = id; settings.ccProModel = id }
+        else { ccCustomModelState = id; settings.ccCustomModel = id }
+    }
+
+    private val ccChatFile get() = java.io.File(getApplication<Application>().filesDir, "claude_code_chat.json")
+
+    /** Keep the Claude Code conversation across restarts, like the chat tab. */
+    private fun saveCcChat() {
+        runCatching {
+            val arr = org.json.JSONArray(ccMessages.filter { !it.running }.map {
+                org.json.JSONObject().put("u", it.fromUser).put("t", it.text).put("e", it.error)
+                    .put("s", org.json.JSONArray(it.steps))
+            })
+            ccChatFile.writeText(arr.toString())
+        }
+    }
+
+    private fun loadCcChat() {
+        if (ccMessages.isNotEmpty()) return
+        runCatching {
+            val arr = org.json.JSONArray(ccChatFile.readText())
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val steps = o.optJSONArray("s")?.let { s -> (0 until s.length()).map { s.optString(it) } } ?: emptyList()
+                ccMessages += CcMessage(o.optBoolean("u"), o.optString("t"), steps, false, o.optBoolean("e"))
+            }
+        }
     }
 
     fun newCcChat() {
         if (ccRunning) return
         ccMessages.clear()
+        runCatching { ccChatFile.delete() }
     }
 
     /** Send a message. Follow-ups continue the same Claude Code conversation. */
     fun askClaudeCode(prompt: String) {
         val text = prompt.trim()
-        if (ccRunning || text.isEmpty() || !ccApiConnected) return
+        if (ccRunning || text.isEmpty() || !ccSignedIn) return
         val app = getApplication<Application>()
         val continueChat = ccMessages.any { !it.fromUser && !it.error }
         ccMessages += CcMessage(true, text)
         ccMessages += CcMessage(false, "", running = true)
         ccRunning = true
-        val backend = com.arin.claudecode.ClaudeCode.Backend(settings.ccCustomBase, settings.ccCustomKey, ccModel)
+        val backend = if (ccBackend == "pro") com.arin.claudecode.ClaudeCode.Backend("pro", "", "", ccModel)
+        else com.arin.claudecode.ClaudeCode.Backend(settings.ccCustomKind, settings.ccCustomBase, settings.ccCustomKey, ccModel)
         ReplyService.start(app)
         ccJob = ArinApp.scope.launch {
             fun show(t: com.arin.claudecode.ClaudeCode.Turn, running: Boolean) {
@@ -653,7 +699,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             }
             try {
                 if (!com.arin.claudecode.ClaudeCode.startTurn(app, text, backend, continueChat)) {
-                    show(com.arin.claudecode.ClaudeCode.Turn("Couldn't start Claude Code. Is Linux set up?", emptyList(), true, true), false)
+                    show(com.arin.claudecode.ClaudeCode.Turn("Couldn't start Claude Code. Check Settings → Claude Code.", emptyList(), true, true), false)
                     return@launch
                 }
                 val deadline = System.currentTimeMillis() + 30 * 60_000L
@@ -673,6 +719,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 show(com.arin.claudecode.ClaudeCode.Turn("Error: ${e.message}", emptyList(), true, true), false)
             } finally {
                 ccRunning = false
+                saveCcChat()
                 ReplyService.stop(app)
             }
         }

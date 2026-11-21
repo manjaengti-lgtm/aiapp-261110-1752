@@ -66,39 +66,44 @@ import com.arin.design.LocalArinExtras
 import com.arin.design.MarkdownText
 
 /**
- * Claude Code as a chat. The brain is the person's own custom API (only a URL and key are entered; the
- * models are listed for them); the tool is Anthropic's Claude Code, running in Arin's Linux. This API is
- * kept separate from the chat tab's APIs.
+ * Claude Code as a chat, like the chat tab. The brain is the person's Claude Pro login or their own API
+ * (both set up in Settings → Claude Code); the tool is Anthropic's Claude Code, running in Arin's Linux.
  */
 @Composable
-fun ClaudeCodeScreen(vm: ChatViewModel, onBack: () -> Unit) {
+fun ClaudeCodeScreen(vm: ChatViewModel, onBack: () -> Unit, onOpenSettings: () -> Unit) {
     LaunchedEffect(Unit) { vm.refreshClaudeCode() }
-    var showSettings by rememberSaveable { mutableStateOf(false) }
-    val colors = MaterialTheme.colorScheme
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
-        // ---- top bar: like the chat tab — title with the model underneath ----
+        // ---- top bar, like the chat tab: title with the model underneath ----
         Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
             Column(Modifier.weight(1f)) {
                 Text("Claude Code", style = MaterialTheme.typography.titleLarge)
-                if (vm.ccApiConnected) ModelPicker(vm)
+                if (vm.ccInstalled && vm.ccSignedIn) ModelPicker(vm)
             }
-            if (vm.ccInstalled && vm.ccApiConnected) {
+            if (vm.ccInstalled && vm.ccSignedIn) {
                 IconButton(onClick = { vm.newCcChat() }, enabled = !vm.ccRunning) { Icon(Icons.Filled.Edit, contentDescription = "New chat") }
-                IconButton(onClick = { showSettings = !showSettings }) { Icon(Icons.Filled.Settings, contentDescription = "API settings") }
             }
+            IconButton(onClick = onOpenSettings) { Icon(Icons.Filled.Settings, contentDescription = "Claude Code settings") }
         }
 
-        when {
-            !vm.ccInstalled -> Setup { InstallCard(vm) }
-            !vm.ccApiConnected || showSettings -> Setup {
-                ConnectCard(vm, onDone = { showSettings = false })
+        if (!vm.ccInstalled || !vm.ccSignedIn) {
+            Setup {
+                Card {
+                    Text(if (!vm.ccInstalled) "Set up Claude Code" else "Sign in to Claude Code", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Install and sign in from Settings → Claude Code — with your Claude Pro (Google) account or your own API.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = onOpenSettings) { Text("Open Settings") }
+                }
             }
-            else -> {
-                Conversation(vm, Modifier.weight(1f))
-                Composer(vm)
-            }
+        } else {
+            Conversation(vm, Modifier.weight(1f))
+            Composer(vm)
         }
     }
 }
@@ -138,81 +143,6 @@ private fun ColumnScope.Setup(content: @Composable ColumnScope.() -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
         content = content,
     )
-}
-
-@Composable
-private fun InstallCard(vm: ChatViewModel) {
-    Card {
-        Text("Install Claude Code", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Installs Anthropic's Claude Code in Arin's built-in Linux (about 100 MB download, 400 MB space). " +
-                "Your own API is the brain; Claude Code is the tool that reads, writes and runs things.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(8.dp))
-        Button(onClick = { vm.installClaudeCode() }, enabled = !vm.ccBusy) {
-            Text(if (vm.ccBusy) "Installing…" else "Install Claude Code")
-        }
-        if (vm.ccBusy || vm.ccLog.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            vm.ccLog.takeLast(10).forEach {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ConnectCard(vm: ChatViewModel, onDone: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    var base by rememberSaveable { mutableStateOf(vm.settings.ccCustomBase.removeSuffix("/anthropic")) }
-    var key by rememberSaveable { mutableStateOf(vm.settings.ccCustomKey) }
-    val fieldColors = OutlinedTextFieldDefaults.colors(focusedTextColor = colors.onSurface, unfocusedTextColor = colors.onSurface)
-    Card {
-        Text("Connect your API (the brain)", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Enter only your API's address and key. Arin finds its models for you. This is used only by Claude Code " +
-                "and doesn't appear in the chat tab.",
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            base, { base = it }, label = { Text("API URL") }, placeholder = { Text("https://api.deepseek.com") },
-            singleLine = true, colors = fieldColors, modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(6.dp))
-        OutlinedTextField(
-            key, { key = it }, label = { Text("API key") }, singleLine = true,
-            visualTransformation = PasswordVisualTransformation(), colors = fieldColors, modifier = Modifier.fillMaxWidth(),
-        )
-        vm.ccConnectError?.let {
-            Spacer(Modifier.height(6.dp))
-            Text(it, color = colors.error, style = MaterialTheme.typography.bodySmall)
-        }
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = { vm.connectCcApi(base, key) }, enabled = !vm.ccConnecting && base.isNotBlank() && key.isNotBlank()) {
-                Text(if (vm.ccConnecting) "Connecting…" else "Connect")
-            }
-            if (vm.ccConnecting) {
-                Spacer(Modifier.width(10.dp))
-                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-            }
-            if (vm.ccApiConnected) {
-                Spacer(Modifier.width(8.dp))
-                TextButton(onClick = onDone) { Text("Back to chat") }
-            }
-        }
-        if (vm.ccApiConnected) {
-            Spacer(Modifier.height(6.dp))
-            Text("Connected ✓ ${vm.ccModels.size} models", color = colors.primary, style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = { vm.disconnectCcApi() }) { Text("Disconnect") }
-        }
-    }
 }
 
 @Composable

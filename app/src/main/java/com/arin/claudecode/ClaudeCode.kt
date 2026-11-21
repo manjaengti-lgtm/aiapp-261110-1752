@@ -63,7 +63,7 @@ object ClaudeCode {
             fi
             # Remove a broken npm attempt so it can't shadow the working binary.
             rm -f /usr/local/lib/node_modules/.bin/claude 2>/dev/null
-            apt-get install -y ripgrep >/dev/null 2>&1 || true
+            apt-get install -y ripgrep python3 >/dev/null 2>&1 || true
             if claude --version 2>&1 | head -n 2; then echo ARIN_OK; else echo ARIN_FAIL; fi
         """.trimIndent()
         val r = Shell.run(context, script, timeoutMs = 25 * 60_000L)
@@ -118,12 +118,19 @@ object ClaudeCode {
         Shell.run(context, "rm -f $TOKEN_FILE; pkill -f 'claude setup-token' 2>/dev/null; echo ok", 60_000)
     }
 
-    /** A custom Anthropic-compatible backend (e.g. DeepSeek): the brain. Claude Code is the tool. */
-    data class Backend(val base: String, val key: String, val model: String)
+    /**
+     * The brain Claude Code uses. [kind]: "anthropic" = the API speaks Anthropic's format (used directly);
+     * "openai" = an OpenAI-compatible API, reached through Arin's local bridge; "pro" = the person's Claude
+     * Pro/Max login (Google account) via the saved token.
+     */
+    data class Backend(val kind: String, val base: String, val key: String, val model: String)
+
+    /** Claude Code's own model names for the Pro login. */
+    val PRO_MODELS = listOf("sonnet", "opus", "haiku")
 
     // ---------- connecting a custom API: find its Anthropic endpoint and list its models ----------
 
-    data class Connection(val anthropicBase: String, val models: List<String>)
+    data class Connection(val kind: String, val base: String, val models: List<String>)
 
     private val http = okhttp3.OkHttpClient.Builder()
         .connectTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
@@ -169,34 +176,70 @@ object ClaudeCode {
      */
     suspend fun connect(base: String, key: String): Connection {
         val clean = base.trim().trimEnd('/').let { if (it.startsWith("http")) it else "https://$it" }
-        val root = clean.removeSuffix("/v1/messages").removeSuffix("/v1").removeSuffix("/anthropic").removeSuffix("/v1")
-        val anthropicCandidates = (if (clean.endsWith("/anthropic")) listOf(clean) else listOf("$root/anthropic", clean, root)).distinct()
+        val root = clean.removeSuffix("/chat/completions").removeSuffix("/v1/messages").removeSuffix("/v1")
+            .removeSuffix("/anthropic").removeSuffix("/v1").removeSuffix("/openai")
+        val anthropicCandidates = (if (clean.endsWith("/anthropic")) listOf(clean) else listOf("$root/anthropic", root, clean)).distinct()
+        val openAiCandidates = listOf(clean, "$root/v1", root).distinct()
         val bearer = mapOf("Authorization" to "Bearer $key")
         val anth = mapOf("x-api-key" to key, "Authorization" to "Bearer $key", "anthropic-version" to "2023-06-01")
+        var rejected = 0
+        var lastError = ""
 
-        // 1. Models: OpenAI-style list at the root, else Anthropic-style list.
+        // 1. Models. A 401 on one address doesn't mean the key is bad (gateways answer 401 for unknown paths),
+        //    so try every address before giving up.
         var models = emptyList<String>()
-        for ((url, h) in listOf("$root/models" to bearer, "$root/v1/models" to bearer) + anthropicCandidates.map { "$it/v1/models" to anth }) {
-            val (code, body) = get(url, h)
-            if (code == 401 || code == 403) throw IllegalStateException("The API key was rejected (HTTP $code).")
+        var openAiBase: String? = null
+        for (cand in openAiCandidates) {
+            val (code, body) = get("$cand/models", bearer)
+            if (code == 401 || code == 403) { rejected++; continue }
+            if (code == 0) lastError = body
+            if (code in 200..299) { models = ids(body); if (models.isNotEmpty()) { openAiBase = cand; break } }
+        }
+        if (models.isEmpty()) for (cand in anthropicCandidates) {
+            val (code, body) = get("$cand/v1/models", anth)
+            if (code == 401 || code == 403) { rejected++; continue }
             if (code in 200..299) { models = ids(body); if (models.isNotEmpty()) break }
         }
+        if (models.isEmpty()) {
+            throw IllegalStateException(
+                when {
+                    rejected > 0 -> "The API key was rejected. Check the key and that it belongs to this URL."
+                    lastError.isNotBlank() -> "Couldn't reach the API: $lastError"
+                    else -> "Couldn't find a model list at this URL. Try the base URL ending in /v1."
+                },
+            )
+        }
 
-        // 2. The Anthropic-format endpoint: the first candidate whose /v1/messages exists.
-        val probeModel = models.firstOrNull() ?: "claude-sonnet-4-5"
-        val probe = """{"model":"$probeModel","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}"""
-        var chosen: String? = null
+        // 2. Prefer an Anthropic-format endpoint (Claude Code's own format) when the API has one.
+        val probe = """{"model":"${models.first()}","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}"""
         for (cand in anthropicCandidates) {
             val (code, body) = post("$cand/v1/messages", anth, probe)
-            if (code == 401 || code == 403) throw IllegalStateException("The API key was rejected (HTTP $code).")
-            if (code == 0) throw IllegalStateException("Couldn't reach $cand: $body")
-            if (code != 404 && code != 405) { chosen = cand; break }
+            val anthropicShaped = body.replace(" ", "").let { it.contains("\"type\":\"message\"") || it.contains("\"type\":\"error\"") }
+            if ((code in 200..299 || code == 400 || code == 422 || code == 429) && anthropicShaped) return Connection("anthropic", cand, models)
         }
-        chosen ?: throw IllegalStateException(
-            "This URL has no Anthropic-compatible API, which Claude Code needs. For DeepSeek use https://api.deepseek.com",
+        // 3. Otherwise an OpenAI-compatible API: Claude Code reaches it through Arin's bridge.
+        val oa = openAiBase ?: openAiCandidates.first()
+        return Connection("openai", oa, models)
+    }
+
+    // ---------- the local bridge (Anthropic format -> OpenAI format) ----------
+
+    private const val BRIDGE_PORT = 8787
+    private const val BRIDGE = "/root/.arin/cc-bridge.py"
+
+    /** (Re)start the bridge for this API. Its key goes in through the environment, never to disk. */
+    private suspend fun startBridge(context: Context, b: Backend): Boolean {
+        val dir = java.io.File(com.arin.terminal.Linux.rootfs(context), "root/.arin").apply { mkdirs() }
+        context.assets.open("cc-bridge.py").use { input -> java.io.File(dir, "cc-bridge.py").outputStream().use { input.copyTo(it) } }
+        val r = Shell.run(
+            context,
+            "command -v python3 >/dev/null || apt-get install -y python3 >/dev/null 2>&1; " +
+                "pkill -f 'cc-[b]ridge.py' 2>/dev/null; sleep 0.3; " +
+                "ARIN_UPSTREAM='${esc(b.base)}' ARIN_KEY='${esc(b.key)}' ARIN_PORT=$BRIDGE_PORT setsid python3 $BRIDGE >/dev/null 2>&1 & " +
+                "for i in 1 2 3 4 5 6 7 8 9 10; do curl -s http://127.0.0.1:$BRIDGE_PORT/health >/dev/null && { echo up; break; }; sleep 0.5; done",
+            90_000,
         )
-        if (models.isEmpty()) throw IllegalStateException("Connected, but the API didn't list any models.")
-        return Connection(chosen, models)
+        return r.stdout.contains("up")
     }
 
     // ---------- running Claude Code like a chat ----------
@@ -210,12 +253,23 @@ object ClaudeCode {
      */
     suspend fun startTurn(context: Context, prompt: String, b: Backend, continueChat: Boolean): Boolean {
         val m = esc(b.model)
-        val env = "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY; " +
-            "export ANTHROPIC_BASE_URL='${esc(b.base)}' ANTHROPIC_AUTH_TOKEN='${esc(b.key)}' " +
-            "ANTHROPIC_MODEL='$m' ANTHROPIC_SMALL_FAST_MODEL='$m' ANTHROPIC_DEFAULT_OPUS_MODEL='$m' " +
-            "ANTHROPIC_DEFAULT_SONNET_MODEL='$m' ANTHROPIC_DEFAULT_HAIKU_MODEL='$m' CLAUDE_CODE_SUBAGENT_MODEL='$m' " +
-            // Only talk to the person's API: no Anthropic telemetry, update checks or error reporting.
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1; "
+        val quiet = "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1"
+        val models = "ANTHROPIC_MODEL='$m' ANTHROPIC_SMALL_FAST_MODEL='$m' ANTHROPIC_DEFAULT_OPUS_MODEL='$m' " +
+            "ANTHROPIC_DEFAULT_SONNET_MODEL='$m' ANTHROPIC_DEFAULT_HAIKU_MODEL='$m' CLAUDE_CODE_SUBAGENT_MODEL='$m'"
+        val env = when (b.kind) {
+            // Claude Pro/Max login: Anthropic's own servers with the saved one-year token.
+            "pro" -> "unset ANTHROPIC_API_KEY ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_MODEL; " +
+                "export CLAUDE_CODE_OAUTH_TOKEN=$(cat $TOKEN_FILE 2>/dev/null) DISABLE_AUTOUPDATER=1; "
+            // OpenAI-compatible API: through the local bridge.
+            "openai" -> {
+                if (!startBridge(context, b)) return false
+                "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY; " +
+                    "export ANTHROPIC_BASE_URL='http://127.0.0.1:$BRIDGE_PORT' ANTHROPIC_AUTH_TOKEN='arin-bridge' $models $quiet; "
+            }
+            // Anthropic-compatible API (e.g. DeepSeek's /anthropic): directly.
+            else -> "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY; " +
+                "export ANTHROPIC_BASE_URL='${esc(b.base)}' ANTHROPIC_AUTH_TOKEN='${esc(b.key)}' $models $quiet; "
+        }
         val b64 = android.util.Base64.encodeToString(prompt.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
         val flags = (if (continueChat) "--continue " else "") +
             "--model '$m' --output-format stream-json --verbose " +

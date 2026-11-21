@@ -196,6 +196,16 @@ class Settings(context: Context) {
         get() = secret("cc_custom")
         set(value) = setSecret("cc_custom", value)
 
+    /** "anthropic" (used directly) or "openai" (through Arin's bridge), found when connecting. */
+    var ccCustomKind: String
+        get() = prefs.getString("cc_custom_kind", "anthropic") ?: "anthropic"
+        set(value) = prefs.edit().putString("cc_custom_kind", value).apply()
+
+    /** Model for the Claude Pro login (Claude Code's names: sonnet, opus, haiku). */
+    var ccProModel: String
+        get() = prefs.getString("cc_pro_model", "sonnet") ?: "sonnet"
+        set(value) = prefs.edit().putString("cc_pro_model", value).apply()
+
     /** Models the Claude Code API listed when connecting (kept only for Claude Code, not the chat tab). */
     var ccCustomModels: List<String>
         get() = (prefs.getString("cc_custom_models", "") ?: "").split('\n').filter { it.isNotBlank() }

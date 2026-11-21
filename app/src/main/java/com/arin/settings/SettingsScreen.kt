@@ -45,7 +45,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
+fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, openClaudeCode: Boolean = false) {
     var confirmClear by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -270,6 +270,9 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
                 vm.offlineStatus.ifBlank { "${vm.offlineDownloaded().size} on this phone · run uncensored models with no internet" },
                 startOpen = vm.offlineBusy,
             ) { OfflineModelSettings(vm) }
+            FoldSection("Claude Code", com.arin.claudecode.claudeCodeSummary(vm), startOpen = openClaudeCode || vm.ccBusy) {
+                com.arin.claudecode.ClaudeCodeLogin(vm)
+            }
             FoldSection("Custom API", "${vm.savedApis.size} saved" + (vm.currentSavedApi()?.let { " · using ${it.name}" } ?: "") + " · tap to add more services") {
                 CustomApiSettings(vm)
             }

@@ -23,9 +23,15 @@ fun AppShell(vm: ChatViewModel) {
     var screen by rememberSaveable { mutableStateOf(Screen.Chat) }
     var projectId by rememberSaveable { mutableStateOf<String?>(null) }
     var backToProjects by rememberSaveable { mutableStateOf(false) }
+    var settingsFromClaudeCode by rememberSaveable { mutableStateOf(false) }
 
     BackHandler(enabled = screen != Screen.Chat) {
-        screen = if (screen == Screen.Project && backToProjects) Screen.Projects else Screen.Chat
+        screen = when {
+            screen == Screen.Project && backToProjects -> Screen.Projects
+            screen == Screen.Settings && settingsFromClaudeCode -> Screen.ClaudeCode
+            else -> Screen.Chat
+        }
+        if (screen != Screen.Settings) settingsFromClaudeCode = false
     }
     // Something arrived from outside (a share, the widget, a notification): show Chat.
     LaunchedEffect(Launch.count) { if (Launch.count > 0) screen = Screen.Chat }
@@ -48,7 +54,7 @@ fun AppShell(vm: ChatViewModel) {
     when (screen) {
         Screen.Chat -> ChatScreen(
             vm,
-            onOpenSettings = { screen = Screen.Settings },
+            onOpenSettings = { settingsFromClaudeCode = false; screen = Screen.Settings },
             onOpenProjects = { screen = Screen.Projects },
             onOpenProject = { p -> projectId = p.id; backToProjects = false; screen = Screen.Project },
             onOpenBuild = { screen = Screen.Build },
@@ -59,10 +65,18 @@ fun AppShell(vm: ChatViewModel) {
             startVoice = Launch.voicePending,
             onVoiceStarted = { Launch.voicePending = false },
         )
-        Screen.Settings -> SettingsScreen(vm, onBack = { screen = Screen.Chat })
+        Screen.Settings -> SettingsScreen(
+            vm,
+            onBack = { screen = if (settingsFromClaudeCode) Screen.ClaudeCode else Screen.Chat; settingsFromClaudeCode = false },
+            openClaudeCode = settingsFromClaudeCode,
+        )
         Screen.Logs -> LogsScreen(onBack = { screen = Screen.Chat })
         Screen.FreeTokens -> com.arin.free.FreeTokensScreen(vm, onBack = { screen = Screen.Chat })
-        Screen.ClaudeCode -> com.arin.claudecode.ClaudeCodeScreen(vm, onBack = { screen = Screen.Chat })
+        Screen.ClaudeCode -> com.arin.claudecode.ClaudeCodeScreen(
+            vm,
+            onBack = { screen = Screen.Chat },
+            onOpenSettings = { settingsFromClaudeCode = true; screen = Screen.Settings },
+        )
         Screen.MovieMaker -> com.arin.movie.MovieMakerScreen(vm, onBack = { screen = Screen.Chat })
         Screen.Build -> com.arin.builder.BuildScreen(
             chat = vm,
