@@ -31,6 +31,12 @@ object Llm {
      * Streams a reply. [maxTokens] asks for a longer answer (Build mode writes whole apps); null leaves the
      * service's default, which for some (DeepSeek-style APIs) is only about 4,000 tokens.
      */
+    /**
+     * "Think less" (Settings): ask for low reasoning effort (and, for DeepSeek, thinking off), since thinking is
+     * billed as output. If a service rejects those fields, the request is sent again without them.
+     */
+    @Volatile var thinkLess: Boolean = false
+
     fun stream(provider: Provider, key: String, model: String, system: String, turns: List<Turn>, maxTokens: Int? = null, cache: Boolean = false, endpoint: CustomApi.Endpoint? = null): Flow<Delta> {
         if (provider.needsKey && key.isBlank()) {
             throw LlmException("Add your ${provider.label} API key in Settings, or switch to Free models.")
@@ -38,15 +44,32 @@ object Llm {
         if (model.isBlank()) throw LlmException("Pick a model first, or type a model id in Settings → Custom API.")
         return when (provider) {
             Provider.Free -> freeStream(model, system, turns, maxTokens)
-            Provider.Gemini -> openAiStream("$GEMINI_BASE/chat/completions", bearer(key), model, system, turns, maxTokens = maxTokens)
+            Provider.Gemini -> lessThinking { low -> openAiStream("$GEMINI_BASE/chat/completions", bearer(key), model, system, turns, maxTokens = maxTokens, lowReasoning = low) }
             // OpenAI's newer models take max_completion_tokens; leave ChatGPT on its default.
             Provider.ChatGPT -> openAiStream("$OPENAI_BASE/chat/completions", bearer(key), model, system, turns)
             Provider.Claude -> anthropicStream("$ANTHROPIC_BASE/messages", anthropicHeaders(key), key, model, system, turns, maxTokens, cache)
             Provider.Custom -> (endpoint ?: CustomApi.current()).let { ep ->
                 when (ep.format) {
-                    ApiFormat.OpenAI -> openAiStream(ep.chatUrl(), bearer(key), model, system, turns, maxTokens = maxTokens)
+                    ApiFormat.OpenAI -> lessThinking { low -> openAiStream(ep.chatUrl(), bearer(key), model, system, turns, maxTokens = maxTokens, lowReasoning = low) }
                     ApiFormat.Anthropic -> anthropicStream(ep.chatUrl(), customAnthropicHeaders(key), key, model, system, turns, maxTokens, cache)
                 }
+            }
+        }
+    }
+
+    /** Run with "think less" fields when it's on; if the service refuses them before answering, run without. */
+    private fun lessThinking(make: (Boolean) -> Flow<Delta>): Flow<Delta> {
+        if (!thinkLess) return make(false)
+        return kotlinx.coroutines.flow.flow {
+            var started = false
+            try {
+                make(true).collect { started = true; emit(it) }
+            } catch (e: LlmException) {
+                val m = e.message.orEmpty().lowercase()
+                val refused = listOf("reasoning", "thinking", "unrecognized", "unknown", "not supported", "unsupported", "invalid param", "extra")
+                    .any { it in m }
+                if (started || !refused) throw e
+                make(false).collect { emit(it) }
             }
         }
     }
@@ -204,11 +227,17 @@ object Llm {
         turns: List<Turn>,
         extra: Boolean = false,
         maxTokens: Int? = null,
+        lowReasoning: Boolean = false,
     ): Flow<Delta> {
         val body = buildJsonObject {
             put("model", model)
             put("stream", true)
             if (maxTokens != null) put("max_tokens", maxTokens)
+            if (lowReasoning) {
+                put("reasoning_effort", "low")
+                // DeepSeek: thinking on by default and billed as output; switch it off.
+                if (model.contains("deepseek", ignoreCase = true)) putJsonObject("thinking") { put("type", "disabled") }
+            }
             if (extra) {
                 put("private", true) // keep prompts out of the free service's public feed
                 put("referrer", "arin-android")

@@ -134,6 +134,13 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit, openClaudeCode: Boolea
                     vm.saveCredits,
                     vm::toggleSaveCredits,
                 )
+                Toggle(
+                    "Think less",
+                    "Asks the model to reason briefly (DeepSeek: thinking off). Thinking is billed as output, so everyday " +
+                        "questions cost much less. Also applies to Claude Code. Turn off for hard problems.",
+                    vm.thinkLess,
+                    vm::toggleThinkLess,
+                )
             }
 
             Section("Memory") {

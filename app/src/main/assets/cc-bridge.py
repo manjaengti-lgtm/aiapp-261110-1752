@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 UPSTREAM = os.environ.get("ARIN_UPSTREAM", "").rstrip("/")   # e.g. https://api.example.com/v1
 KEY = os.environ.get("ARIN_KEY", "")
 PORT = int(os.environ.get("ARIN_PORT", "8787"))
+THINK_LESS = os.environ.get("ARIN_THINK_LESS", "0") == "1"   # Arin: Settings → Think less
 
 
 def as_blocks(content):
@@ -82,6 +83,11 @@ def to_openai(req):
                 msg["tool_calls"] = calls
             msgs.append(msg)
     out = {"model": req.get("model"), "messages": msgs, "stream": True}
+    if THINK_LESS:
+        # Brief reasoning: thinking is billed as output. DeepSeek: thinking off.
+        out["reasoning_effort"] = "low"
+        if "deepseek" in (req.get("model") or "").lower():
+            out["thinking"] = {"type": "disabled"}
     if req.get("max_tokens"):
         out["max_tokens"] = req["max_tokens"]
     if req.get("temperature") is not None:
@@ -233,7 +239,19 @@ class Handler(BaseHTTPRequestHandler):
         if not path.endswith("/messages"):
             return self.send_json(404, {"type": "error", "error": {"type": "not_found_error", "message": path}})
         try:
-            resp = upstream_stream(to_openai(req))
+            body = to_openai(req)
+            try:
+                resp = upstream_stream(body)
+            except urllib.error.HTTPError as e:
+                # The API refused the think-less fields: send again without them.
+                detail = e.read().decode("utf-8", "replace")
+                if e.code == 400 and ("reasoning_effort" in body or "thinking" in body) and any(
+                        w in detail.lower() for w in ("reasoning", "thinking", "unrecognized", "unknown", "unsupported", "extra")):
+                    body.pop("reasoning_effort", None)
+                    body.pop("thinking", None)
+                    resp = upstream_stream(body)
+                else:
+                    raise urllib.error.HTTPError(e.url, e.code, e.msg, e.hdrs, __import__("io").BytesIO(detail.encode()))
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")[:2000]
             kind = {401: "authentication_error", 403: "permission_error", 404: "not_found_error",

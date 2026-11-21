@@ -161,6 +161,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var saveCredits by mutableStateOf(settings.saveCredits)
         private set
 
+    var thinkLess by mutableStateOf(settings.thinkLess.also { Llm.thinkLess = it })
+        private set
+
+    fun toggleThinkLess(on: Boolean) {
+        thinkLess = on
+        settings.thinkLess = on
+        Llm.thinkLess = on
+        notice = if (on) "Think less is on: the model reasons briefly, so replies cost fewer tokens." else "Think less is off: full reasoning."
+    }
+
     fun toggleSaveCredits(on: Boolean) {
         saveCredits = on
         settings.saveCredits = on
@@ -173,6 +183,23 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
      * its LAST occurrence and replace the earlier identical copies with a short marker. The model keeps the
      * full latest copy plus the note that an identical one appeared earlier, so no real context is lost.
      */
+    /**
+     * In a long run of steps, old command outputs, pages and search results are resent at every step. Keep the
+     * newest few in full and send only the start and end of older long ones (the model already acted on them).
+     * The person's own messages are never shortened.
+     */
+    private fun shrinkOldToolOutput(turns: List<Turn>, firstToolTurn: Int, keepRecent: Int = 4): List<Turn> {
+        val cutoff = turns.size - keepRecent
+        return turns.mapIndexed { i, t ->
+            if (i < firstToolTurn || i >= cutoff || !t.fromUser || t.hasMedia || t.text.length <= 3000) t
+            else t.copy(
+                text = t.text.take(1500) +
+                    "\n…[older tool output shortened to save tokens: ${t.text.length - 2100} characters skipped]…\n" +
+                    t.text.takeLast(600),
+            )
+        }
+    }
+
     private fun dedupeTurns(turns: List<Turn>): List<Turn> {
         if (turns.size <= 2) return turns
         val minLen = 600
@@ -981,7 +1008,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     if (problems.isNotEmpty()) notice = problems.joinToString("\n")
                 }
                 val (cfg, names) = ccMcpConfig()
-                val extras = com.arin.claudecode.ClaudeCode.Extras(cfg, names, githubToken())
+                val extras = com.arin.claudecode.ClaudeCode.Extras(cfg, names, githubToken(), thinkLess)
                 if (!com.arin.claudecode.ClaudeCode.startTurn(app, text, backend, continueChat, extras)) {
                     failed = "Couldn't start Claude Code. Check Settings → Claude Code."
                     return@launch
@@ -2308,6 +2335,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             var failure: String? = null
             try {
                 val turns = Attachments.toTurns(p, history, projectMedia(project)).toMutableList()
+                // Everything added after this point is tool output from this reply's own steps.
+                val firstToolTurn = turns.size
                 // Save progress every few seconds, so a crash or a killed app leaves a reply that can be resumed.
                 run.checkpointJob?.cancel()
                 run.checkpointJob = launch {
@@ -2394,7 +2423,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                                 else turns + Turn(false, text.toString()) +
                                     Turn(true, "Your reply above was cut off mid-way. Continue it from exactly where it stopped. Do not repeat anything already written and do not start over — just carry straight on.")
                             try {
-                                val sent = if (saveCredits) dedupeTurns(streamTurns) else streamTurns
+                                val sent = if (saveCredits) shrinkOldToolOutput(dedupeTurns(streamTurns), firstToolTurn) else streamTurns
                                 // Speed check: how big the request is and how long the service takes to start answering.
                                 val t0 = System.currentTimeMillis()
                                 var firstAt = 0L

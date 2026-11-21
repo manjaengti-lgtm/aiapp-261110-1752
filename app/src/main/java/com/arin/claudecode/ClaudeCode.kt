@@ -381,14 +381,15 @@ object ClaudeCode {
     private const val BRIDGE = "/root/.arin/cc-bridge.py"
 
     /** (Re)start the bridge for this API. Its key goes in through the environment, never to disk. */
-    private suspend fun startBridge(context: Context, b: Backend): Boolean {
+    private suspend fun startBridge(context: Context, b: Backend, thinkLess: Boolean = false): Boolean {
         val dir = java.io.File(com.arin.terminal.Linux.rootfs(context), "root/.arin").apply { mkdirs() }
         context.assets.open("cc-bridge.py").use { input -> java.io.File(dir, "cc-bridge.py").outputStream().use { input.copyTo(it) } }
         val r = Shell.run(
             context,
             "command -v python3 >/dev/null || apt-get install -y python3 >/dev/null 2>&1; " +
                 "pkill -f 'cc-[b]ridge.py' 2>/dev/null; sleep 0.3; " +
-                "ARIN_UPSTREAM='${esc(b.base)}' ARIN_KEY='${esc(b.key)}' ARIN_PORT=$BRIDGE_PORT setsid python3 $BRIDGE >/dev/null 2>&1 & " +
+                "ARIN_UPSTREAM='${esc(b.base)}' ARIN_KEY='${esc(b.key)}' ARIN_PORT=$BRIDGE_PORT ARIN_THINK_LESS=${if (thinkLess) 1 else 0} " +
+                    "setsid python3 $BRIDGE >/dev/null 2>&1 & " +
                 "for i in 1 2 3 4 5 6 7 8 9 10; do curl -s http://127.0.0.1:$BRIDGE_PORT/health >/dev/null && { echo up; break; }; sleep 0.5; done",
             90_000,
         )
@@ -410,7 +411,23 @@ object ClaudeCode {
      * Extra powers for a turn: [mcpConfig] = Claude Code MCP config JSON (Arin's tools, REA, the person's servers),
      * [mcpServers] = their names (all their tools are allowed), [githubToken] = lets git push / gh work.
      */
-    data class Extras(val mcpConfig: String = "", val mcpServers: List<String> = emptyList(), val githubToken: String = "")
+    data class Extras(
+        val mcpConfig: String = "",
+        val mcpServers: List<String> = emptyList(),
+        val githubToken: String = "",
+        /** Settings → Think less: brief reasoning, fewer output tokens. */
+        val thinkLess: Boolean = false,
+    )
+
+    /**
+     * Tools Claude Code would describe in every request that aren't useful on a phone (sub-agents, schedules,
+     * worktrees…). Leaving them out cut each request from about 23,000 to 7,600 tokens in testing.
+     * WebSearch only works on Anthropic's own servers, so it's dropped for custom APIs (Arin's web_search covers it).
+     */
+    private val HEAVY_TOOLS = listOf(
+        "Agent", "Task", "CronCreate", "CronDelete", "CronList", "EnterWorktree", "ExitWorktree", "ListAgents", "Monitor",
+        "NotebookEdit", "ReportFindings", "ScheduleWakeup", "SendMessage", "Skill", "TaskStop", "Workflow",
+    )
 
     suspend fun startTurn(context: Context, prompt: String, b: Backend, continueChat: Boolean, extras: Extras = Extras()): Boolean {
         val m = esc(b.model)
@@ -424,7 +441,7 @@ object ClaudeCode {
                 "export CLAUDE_CODE_OAUTH_TOKEN=$(cat $TOKEN_FILE 2>/dev/null) DISABLE_AUTOUPDATER=1; "
             // OpenAI-compatible API: through the local bridge.
             "openai" -> {
-                if (!startBridge(context, b)) return false
+                if (!startBridge(context, b, extras.thinkLess)) return false
                 "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY; " +
                     "export ANTHROPIC_BASE_URL='http://127.0.0.1:$BRIDGE_PORT' ANTHROPIC_AUTH_TOKEN='arin-bridge' $models $quiet; "
             }
@@ -454,16 +471,19 @@ object ClaudeCode {
                 "git config --global user.name >/dev/null || git config --global user.name 'Arin'; " +
                 "git config --global user.email >/dev/null || git config --global user.email 'arin@users.noreply.github.com'; "
         else ""
-        val tools = (listOf("Bash", "Read", "Edit", "Write", "MultiEdit", "Glob", "Grep", "WebFetch", "WebSearch", "TodoWrite", "NotebookEdit") +
-            extras.mcpServers.map { "mcp__$it" }).joinToString(" ")
+        val pro = b.kind == "pro"
+        val tools = (listOf("Bash", "Read", "Edit", "Write", "MultiEdit", "Glob", "Grep", "WebFetch", "TodoWrite") +
+            (if (pro) listOf("WebSearch") else emptyList()) + extras.mcpServers.map { "mcp__$it" }).joinToString(" ")
+        val dropped = (HEAVY_TOOLS + if (pro) emptyList() else listOf("WebSearch")).joinToString(" ")
         val flags = (if (continueChat) "--continue " else "") +
             "--model '$m' --output-format stream-json --verbose --include-partial-messages " + mcpFlag +
-            "--allowedTools $tools"
+            "--disallowedTools $dropped --allowedTools $tools"
+        val thinking = if (extras.thinkLess) "export MAX_THINKING_TOKENS=0; " else ""
         val r = Shell.run(
             context,
             "pkill -f 'claude -[p]' 2>/dev/null; echo '$b64' | base64 -d > $RUN_PROMPT; rm -f $RUN_OUT; " +
                 "mkdir -p /root/files; cd /root/files; " + gitSetup +
-                "setsid bash -c \"$env $gh claude -p $flags < $RUN_PROMPT > $RUN_OUT 2>&1; echo '{\\\"type\\\":\\\"arin_end\\\"}' >> $RUN_OUT\" >/dev/null 2>&1 & echo started",
+                "setsid bash -c \"$env $gh $thinking claude -p $flags < $RUN_PROMPT > $RUN_OUT 2>&1; echo '{\\\"type\\\":\\\"arin_end\\\"}' >> $RUN_OUT\" >/dev/null 2>&1 & echo started",
             60_000,
         )
         return r.stdout.contains("started")

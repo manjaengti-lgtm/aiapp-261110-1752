@@ -139,6 +139,11 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("save_credits", true)
         set(value) = prefs.edit().putBoolean("save_credits", value).apply()
 
+    /** Think less: low reasoning effort (DeepSeek: thinking off), since thinking tokens are billed as output. */
+    var thinkLess: Boolean
+        get() = prefs.getBoolean("think_less", false)
+        set(value) = prefs.edit().putBoolean("think_less", value).apply()
+
     var notifyOnReply: Boolean
         get() = prefs.getBoolean("notify_on_reply", true)
         set(value) = prefs.edit().putBoolean("notify_on_reply", value).apply()
