@@ -94,14 +94,14 @@ fun MovieMakerScreen(vm: ChatViewModel, onBack: () -> Unit) {
                 color = colors.onSurfaceVariant,
             )
 
-            var script by rememberSaveable { mutableStateOf("") }
+            val script = vm.movieScript
             OutlinedTextField(
                 value = script,
-                onValueChange = { script = it },
+                onValueChange = { vm.movieScript = it },
                 placeholder = { Text("e.g. A short film about a lighthouse keeper who befriends a storm…") },
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface),
                 colors = fieldColors,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 320.dp),
             )
             Button(onClick = { vm.makeMovie(script) }, enabled = !vm.movieBusy && script.isNotBlank()) {
                 Text(if (vm.movieBusy) "Working…" else "Make movie")

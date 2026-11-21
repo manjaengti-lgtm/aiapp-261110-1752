@@ -982,6 +982,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun makeMovie(script: String) {
         if (movieBusy || script.isBlank()) return
+        movieScript = script
         val app = getApplication<Application>()
         movieBusy = true
         movieReady = false
@@ -1968,10 +1969,71 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             while (messages.size > edit) messages.removeAt(messages.lastIndex)
             editing = null
         }
+        // "Build the movie" after the chat wrote a script: hand the script to Movie Maker instead of replying.
+        if (edit == null && files.isEmpty() && isMovieRequest(text)) {
+            val script = scriptFromChat()
+            if (script != null) {
+                messages += Message(fromUser = true, text = text.trim())
+                val words = script.split(Regex("\\s+")).size
+                messages += Message(
+                    fromUser = false,
+                    text = "🎬 Sent the script ($words words) to **Movie Maker** — it's making the movie now. " +
+                        "Watch the progress and steer it from the Director chat there.",
+                )
+                persist()
+                movieScript = script
+                openMovie = true
+                makeMovie(script)
+                return
+            }
+        }
         messages += Message(fromUser = true, text = text.trim(), attachments = files)
         if (messages.size == 1 && !isReverseEngineeringChat()) title = makeTitle(text, files)
         persist()
         reply()
+    }
+
+    /** Movie Maker should open (the chat handed it a script). AppShell switches screens. */
+    var openMovie by mutableStateOf(false)
+
+    /** The script in Movie Maker's box (kept here so the chat can fill it). */
+    var movieScript by mutableStateOf("")
+
+    /** "build the movie", "make the film", "send it to movie maker" — but not "make a movie script". */
+    private fun isMovieRequest(text: String): Boolean {
+        val t = text.lowercase()
+        if ("movie maker" in t || "moviemaker" in t) return true
+        return Regex(
+            "\\b(build|make|create|render|produce|generate|shoot|film|turn)\\b[^.?!]{0,30}?\\b(movie|film)\\b" +
+                "(?!\\s*(script|screenplay|idea|ideas|plot|story|stories|review|name|title))",
+        ).containsMatchIn(t)
+    }
+
+    /**
+     * The script the chat wrote: the latest script-like replies, joined in order (a long script written across
+     * several replies with "continue" in between comes out whole). Null when the chat has no script.
+     */
+    private fun scriptFromChat(): String? {
+        val scriptLike = Regex(
+            "(^|\\n)\\s*(INT\\.|EXT\\.|INT/EXT|FADE (IN|OUT)|CUT TO|SCENE \\d|ACT [IVX\\d])|(^|\\n)\\s*\\**[A-Z][A-Z .'’-]{1,30}\\**\\s*(\\([^)]*\\))?\\s*[—:–-]",
+        )
+        val parts = mutableListOf<String>()
+        for (m in messages.reversed()) {
+            if (m.failed) continue
+            if (m.fromUser) {
+                // Short nudges like "continue" or "go on" sit between parts of one long script.
+                if (parts.isNotEmpty() && m.text.length > 60) break
+                continue
+            }
+            val looksLikeScript = scriptLike.containsMatchIn(m.text) || m.text.length > 1500
+            if (looksLikeScript) parts += m.text
+            else if (parts.isNotEmpty()) break
+        }
+        if (parts.isEmpty()) {
+            val last = messages.lastOrNull { !it.fromUser && !it.failed && it.text.length > 300 } ?: return null
+            parts += last.text
+        }
+        return parts.reversed().joinToString("\n\n").trim().takeIf { it.length > 80 }
     }
 
     /** Start editing a sent message; returns its text for the message box. */

@@ -35,6 +35,13 @@ fun AppShell(vm: ChatViewModel) {
     }
     // Something arrived from outside (a share, the widget, a notification): show Chat.
     LaunchedEffect(Launch.count) { if (Launch.count > 0) screen = Screen.Chat }
+    // Chat handed a script to Movie Maker: show it.
+    LaunchedEffect(vm.openMovie) {
+        if (vm.openMovie) {
+            vm.openMovie = false
+            screen = Screen.MovieMaker
+        }
+    }
     // Chat started a build: show it.
     LaunchedEffect(vm.openBuild) {
         if (vm.openBuild) {
