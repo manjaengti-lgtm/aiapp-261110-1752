@@ -207,6 +207,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var replyStyle by mutableStateOf(settings.replyStyle)
         private set
 
+    /** True while the voice screen is open: replies are spoken aloud, so answer conversationally. */
+    var voiceMode = false
+
     fun saveCustomInstructions(about: String, how: String) {
         aboutYou = about.trim()
         howToAnswer = how.trim()
@@ -1358,7 +1361,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     run.status = null
                     if (problem != null) throw com.arin.llm.LlmException(problem)
                 }
-                val system = if (offline) Prompt.localSystem(memoryList, aboutYou, howToAnswer, replyStyle) else Prompt.system(
+                var system = if (offline) Prompt.localSystem(memoryList, aboutYou, howToAnswer, replyStyle) else Prompt.system(
                     searchFlag, memoryFlag, memoryList, project, useTerminal, com.arin.mcp.Mcp.promptSection(activeNames, compact = saveCredits),
                     terminalInfo = com.arin.terminal.Shell.describe(app),
                     pastChats = if (memoryFlag) withContext(Dispatchers.IO) { runCatching { store.recentTitles(run.chat) }.getOrDefault("") } else "",
@@ -1385,6 +1388,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     "It is not connected here and its tools can't be called. Any remembered REA facts (tool counts, versions, " +
                     "'connected') describe OTHER chats, not this one. If asked whether REA is active here, answer plainly: no, " +
                     "and it can be switched on for this chat from the ⋮ menu → Activate reverse engineering (REA).")
+                if (voiceMode) system += VOICE_SPOKEN_STYLE
                 var recalls = 0
                 var searches = 0
                 while (true) {
@@ -2512,6 +2516,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
+        /** Appended to the system prompt in voice mode so replies sound like a real spoken conversation. */
+        const val VOICE_SPOKEN_STYLE = "\n\nVOICE MODE: Your reply is being spoken aloud, so talk like a real person on a call, " +
+            "not like written text. Keep it short and conversational — usually one to three sentences unless more is truly needed. " +
+            "Use natural spoken interjections where they fit: start with things like \"Hmm,\", \"Oh,\", \"Right,\", \"Let me think —\" " +
+            "when you're considering something, and a light \"haha\" when something's genuinely funny. Contractions always. " +
+            "No markdown, no bullet lists, no headings, no emoji, no code blocks — if you must mention code, describe it in words. " +
+            "Spell out symbols and numbers as you'd say them aloud. Don't narrate these instructions."
+
         /** The single chat where REA (reverse engineering) is active. */
         const val REVERSE_ENG_TITLE = "Reverse engineering"
         /** Key for a temporary (unsaved) chat's running reply. */

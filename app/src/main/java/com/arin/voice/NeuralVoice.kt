@@ -14,6 +14,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.net.URLEncoder
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /**
@@ -36,6 +37,13 @@ class NeuralVoice(private val cacheDir: File) {
     private var worker: Job? = null
     private var onClipDone: () -> Unit = {}
     private var onFallback: (String) -> Unit = {}
+    // Short phrases (the "hmm, let me think" fillers) are cached as audio so they replay instantly.
+    private val cache = ConcurrentHashMap<String, ByteArray>()
+
+    /** Fetch short phrases ahead of time so the first filler plays with no wait. */
+    fun preload(phrases: List<String>) {
+        scope.launch { withContext(Dispatchers.IO) { phrases.forEach { fetch(it) } } }
+    }
 
     fun start(onClipDone: () -> Unit, onFallback: (String) -> Unit) {
         this.onClipDone = onClipDone
@@ -67,18 +75,23 @@ class NeuralVoice(private val cacheDir: File) {
         scope.cancel()
     }
 
-    private fun fetch(text: String): ByteArray? = runCatching {
-        val t = text.take(900)
-        val url = "https://text.pollinations.ai/" + URLEncoder.encode(t, "UTF-8") + "?model=openai-audio&voice=" + voice
-        val req = Request.Builder().url(url).header("User-Agent", "Arin-Android").build()
-        http.newCall(req).execute().use { r ->
-            val body = r.body ?: return null
-            val bytes = body.bytes()
-            val type = r.header("Content-Type").orEmpty()
-            // A real clip is audio; an error usually comes back as a short bit of text/JSON.
-            if (!r.isSuccessful || (!type.startsWith("audio") && bytes.size < 2_000)) null else bytes
-        }
-    }.getOrNull()
+    private fun fetch(text: String): ByteArray? {
+        val key = "$voice|$text"
+        cache[key]?.let { return it }
+        return runCatching {
+            val t = text.take(900)
+            val url = "https://text.pollinations.ai/" + URLEncoder.encode(t, "UTF-8") + "?model=openai-audio&voice=" + voice
+            val req = Request.Builder().url(url).header("User-Agent", "Arin-Android").build()
+            http.newCall(req).execute().use { r ->
+                val body = r.body ?: return null
+                val bytes = body.bytes()
+                val type = r.header("Content-Type").orEmpty()
+                // A real clip is audio; an error usually comes back as a short bit of text/JSON.
+                val ok = r.isSuccessful && (type.startsWith("audio") || bytes.size >= 2_000)
+                if (!ok) null else bytes.also { if (text.length <= 48) cache[key] = it }
+            }
+        }.getOrNull()
+    }
 
     private suspend fun playAndWait(bytes: ByteArray) = withContext(Dispatchers.Main) {
         val file = File.createTempFile("arin-tts", ".mp3", cacheDir)

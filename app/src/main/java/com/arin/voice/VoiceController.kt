@@ -53,6 +53,9 @@ class VoiceController(
     var voiceName = "nova"
         set(v) { field = v; neural?.voice = v }
     private var neural: NeuralVoice? = null
+    private val fillerHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var fillerRunnable: Runnable? = null
+    private var spokeThisReply = false
 
     fun start() {
         if (naturalVoice) {
@@ -61,6 +64,7 @@ class VoiceController(
                 onClipDone = { mainThread { onUtteranceEnded() } },
                 onFallback = { text -> mainThread { if (!closed) deviceSpeak(text, counted = true) } },
             )
+            neural?.preload(FILLERS)
         }
         tts = TextToSpeech(context) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
@@ -85,6 +89,7 @@ class VoiceController(
 
     fun listen() {
         if (closed) return
+        cancelFiller()
         tts?.stop()
         neural?.stop()
         queued.set(0)
@@ -107,13 +112,38 @@ class VoiceController(
     /** A new reply is starting: nothing has been spoken from it yet. */
     fun replyStarted() {
         replyDone = false
+        spokeThisReply = false
         state = VoiceState.Thinking
+        // If the first sentence is slow to arrive, fill the silence with a quick "hmm, let me think"
+        // like a person would, instead of a dead pause.
+        if (naturalVoice && neural != null) scheduleFiller()
+    }
+
+    private fun scheduleFiller() {
+        cancelFiller()
+        val r = Runnable {
+            if (!closed && !spokeThisReply && state == VoiceState.Thinking) {
+                state = VoiceState.Speaking
+                queued.incrementAndGet()
+                neural?.speak(FILLERS.random())
+            }
+        }
+        fillerRunnable = r
+        fillerHandler.postDelayed(r, 700)
+    }
+
+    private fun cancelFiller() {
+        fillerRunnable?.let { fillerHandler.removeCallbacks(it) }
+        fillerRunnable = null
     }
 
     /** Speak one sentence of the reply. */
     fun say(sentence: String) {
         val clean = speakable(sentence)
         if (clean.isBlank()) return
+        // The real reply has started: no need for the "thinking" filler (if it hasn't played yet).
+        spokeThisReply = true
+        cancelFiller()
         val n = neural
         if (naturalVoice && n != null) {
             state = VoiceState.Speaking
@@ -143,6 +173,7 @@ class VoiceController(
 
     fun close() {
         closed = true
+        cancelFiller()
         runCatching { recognizer?.destroy() }
         runCatching { tts?.stop(); tts?.shutdown() }
         runCatching { neural?.close() }
@@ -210,6 +241,16 @@ class VoiceController(
     }
 
     companion object {
+        /** Short, human "thinking out loud" lines played while the reply is still being formed. */
+        val FILLERS = listOf(
+            "Hmm, let me think.",
+            "Let me think about that.",
+            "Hmm.",
+            "Okay, let me see.",
+            "Give me a second.",
+            "Right, let me think.",
+        )
+
         /** Markdown and code read badly aloud: keep the words. */
         fun speakable(text: String): String = text
             .replace(Regex("""```.*?```""", RegexOption.DOT_MATCHES_ALL), " (code shown on screen) ")
