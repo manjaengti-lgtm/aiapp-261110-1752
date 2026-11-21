@@ -42,6 +42,7 @@ import com.arin.chat.ChatViewModel
  * "Claude Code" tab: run Anthropic's Claude Code in Arin's Linux, signed in with the person's own
  * Claude Pro/Max subscription. Install → connect → ask; answers come back here.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ClaudeCodeScreen(vm: ChatViewModel, onBack: () -> Unit) {
     val uri = LocalUriHandler.current
