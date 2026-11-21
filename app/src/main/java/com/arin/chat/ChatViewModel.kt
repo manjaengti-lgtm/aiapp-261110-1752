@@ -606,9 +606,33 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Claude Code chat: the brain is the person's custom API or Claude Pro login; Claude Code is the tool ----
 
-    data class CcMessage(val fromUser: Boolean, val text: String, val steps: List<String> = emptyList(), val running: Boolean = false, val error: Boolean = false)
 
-    val ccMessages = mutableStateListOf<CcMessage>()
+    /** The Claude Code conversation, as chat-tab messages (same look: thinking, steps, Copy, Summary). */
+    val ccMessages = mutableStateListOf<Message>()
+    // The reply while it streams in, like the chat tab's live reply.
+    var ccLiveText by mutableStateOf("")
+    var ccLiveThinking by mutableStateOf("")
+    val ccLiveCommands = mutableStateListOf<com.arin.data.CommandRun>()
+    var ccStatus by mutableStateOf<String?>(null)
+    /** Pictures/videos Claude Code found with Arin's tools this turn (shown under the reply). */
+    private val ccLiveMedia = java.util.concurrent.CopyOnWriteArrayList<com.arin.data.MediaItem>()
+
+    /** Reverse engineering: REA's tools given to Claude Code. */
+    var ccReaOn by mutableStateOf(settings.secret("cc_rea") == "on")
+        private set
+
+    fun toggleCcRea(on: Boolean) {
+        ccReaOn = on
+        settings.setSecret("cc_rea", if (on) "on" else "")
+        if (on) {
+            val app = getApplication<Application>()
+            ccStatus = null
+            ArinApp.scope.launch {
+                val problems = runCatching { com.arin.mcp.Mcp.connectAll(app, listOf(com.arin.mcp.Mcp.REA), canStart = true) }.getOrElse { listOf(it.message ?: "REA error") }
+                if (problems.isNotEmpty()) notice = problems.joinToString("\n")
+            }
+        }
+    }
     /** "pro" = Claude Pro/Max (Google account) login, "custom" = own API. Chosen in Settings. */
     var ccBackend by mutableStateOf(settings.ccBackend)
         private set
@@ -740,27 +764,19 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private val ccChatFile get() = java.io.File(getApplication<Application>().filesDir, "claude_code_chat.json")
+    private val ccJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; encodeDefaults = false }
 
     /** Keep the Claude Code conversation across restarts, like the chat tab. */
     private fun saveCcChat() {
         runCatching {
-            val arr = org.json.JSONArray(ccMessages.filter { !it.running }.map {
-                org.json.JSONObject().put("u", it.fromUser).put("t", it.text).put("e", it.error)
-                    .put("s", org.json.JSONArray(it.steps))
-            })
-            ccChatFile.writeText(arr.toString())
+            ccChatFile.writeText(ccJson.encodeToString(kotlinx.serialization.builtins.ListSerializer(Message.serializer()), ccMessages.toList()))
         }
     }
 
     private fun loadCcChat() {
         if (ccMessages.isNotEmpty()) return
         runCatching {
-            val arr = org.json.JSONArray(ccChatFile.readText())
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                val steps = o.optJSONArray("s")?.let { s -> (0 until s.length()).map { s.optString(it) } } ?: emptyList()
-                ccMessages += CcMessage(o.optBoolean("u"), o.optString("t"), steps, false, o.optBoolean("e"))
-            }
+            ccMessages += ccJson.decodeFromString(kotlinx.serialization.builtins.ListSerializer(Message.serializer()), ccChatFile.readText())
         }
     }
 
@@ -819,53 +835,194 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         runCatching { java.io.File(com.arin.terminal.Linux.rootfs(getApplication()), "root/files/${f.path}").delete() }
     }
 
-    /** Send a message. Follow-ups continue the same Claude Code conversation. */
+    /** The Claude Code chat's secret for Arin's tool server (so other apps can't call it). */
+    private fun ccMcpToken(): String = settings.secret("cc_mcp_token").ifBlank {
+        java.util.UUID.randomUUID().toString().replace("-", "").also { settings.setSecret("cc_mcp_token", it) }
+    }
+
+    /** Arin's features for Claude Code: the same ones the chat tab's model has. */
+    private suspend fun ccTool(name: String, a: org.json.JSONObject): Pair<String, Boolean> {
+        val app = getApplication<Application>()
+        fun arg(k: String) = a.optString(k).trim()
+        return when (name) {
+            "web_search" -> {
+                ccStatus = "Searching “${arg("query").take(50)}”"
+                com.arin.llm.WebSearch.searchForModel(arg("query")).second.take(24_000) to false
+            }
+            "read_page" -> {
+                ccStatus = "Reading " + arg("url").removePrefix("https://").take(50)
+                runCatching { com.arin.builder.WebTools.fetch(arg("url")).take(24_000) to false }.getOrElse { "Couldn't open it: ${it.message}" to true }
+            }
+            "find_images", "find_videos" -> {
+                val video = name == "find_videos"
+                ccStatus = (if (video) "Finding videos of “" else "Finding pictures of “") + arg("query").take(50) + "”"
+                val found = runCatching {
+                    if (video) com.arin.media.MediaSearch.videos(arg("query")) else com.arin.media.MediaSearch.images(arg("query"))
+                }.getOrDefault(emptyList())
+                ccLiveMedia += found.filter { f -> ccLiveMedia.none { it.url == f.url } }
+                if (found.isEmpty()) "Nothing found for \"${arg("query")}\"." to false
+                else "Found ${found.size} — they are shown to the person under your reply (don't list the links): " +
+                    found.take(6).joinToString("; ") { it.title.take(60) } to false
+            }
+            "remember" -> {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { addMemory(arg("fact")) }
+                "Saved to Arin's memory." to false
+            }
+            "recall" -> (memories.joinToString("\n") { "- " + it.text }.ifBlank { "Nothing saved yet." }) to false
+            "make_movie" -> {
+                val script = arg("script")
+                if (script.isBlank()) return "Give the script or idea." to true
+                if (movieBusy) return "Movie Maker is already making a film; check movie_status." to true
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { movieScript = script; makeMovie(script) }
+                "Started in Movie Maker: it plans the shots with the person's model, renders and edits the film. " +
+                    "The person can watch it in the Movie Maker tab; use movie_status to check." to false
+            }
+            "movie_status" -> (when {
+                movieBusy -> "Working: $movieStep" + (movieFraction?.let { " (${(it * 100).toInt()}%)" } ?: "")
+                movieReady -> "Finished: “$movieTitle” is ready in Movie Maker."
+                movieError != null -> "Stopped: $movieError"
+                else -> "No film is being made."
+            }) to false
+            "build_app" -> {
+                val problem = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    startBuild(arg("name"), arg("description"), BuildTarget.BUILD_TAB)
+                }
+                (problem ?: "The build started in Arin's Build tab (GitHub). Progress and the APK link show there.") to (problem != null)
+            }
+            else -> "Unknown tool $name" to true
+        }
+    }
+
+    /** MCP config for this turn: Arin's tools, REA when on, and the person's enabled servers. */
+    private fun ccMcpConfig(): Pair<String, List<String>> {
+        com.arin.claudecode.ArinMcp.start(ccMcpToken()) { n, a -> ccTool(n, a) }
+        val servers = org.json.JSONObject()
+        servers.put("arin", org.json.JSONObject().put("type", "http").put("url", "http://127.0.0.1:${com.arin.claudecode.ArinMcp.PORT}/mcp")
+            .put("headers", org.json.JSONObject().put("Authorization", "Bearer ${ccMcpToken()}")))
+        val names = mutableListOf("arin")
+        val others = mcpServers.filter { it.enabled && it.url.isNotBlank() && it.name != com.arin.mcp.Mcp.REA.name }
+        val list = if (ccReaOn) others + com.arin.mcp.Mcp.REA else others
+        for (srv in list) {
+            val id = srv.name.lowercase().replace(Regex("[^a-z0-9_-]"), "_")
+            val o = org.json.JSONObject().put("type", "http").put("url", srv.url)
+            if (srv.token.isNotBlank()) o.put("headers", org.json.JSONObject().put("Authorization", "Bearer ${srv.token}"))
+            servers.put(id, o)
+            names += id
+        }
+        return org.json.JSONObject().put("mcpServers", servers).toString() to names
+    }
+
+    /** Send a message. While Claude Code is working, a message steers it (like the chat tab). */
     fun askClaudeCode(prompt: String) {
         val typed = prompt.trim()
         val files = ccPending.toList()
-        if (ccRunning || (typed.isEmpty() && files.isEmpty()) || !ccSignedIn || ccAttaching) return
+        if ((typed.isEmpty() && files.isEmpty()) || !ccSignedIn || ccAttaching) return
+        if (ccRunning) { steerClaudeCode(typed, files); return }
+        runCcTurn(typed, files, steering = false)
+    }
+
+    /** Stop the current step, keep what was done, and carry on with the new instruction. */
+    private fun steerClaudeCode(typed: String, files: List<CcFile>) {
         val app = getApplication<Application>()
-        val continueChat = ccMessages.any { !it.fromUser && !it.error }
+        ArinApp.scope.launch {
+            ccSteerPending = true
+            ccStopRequested = true
+            com.arin.claudecode.ClaudeCode.stopTurn(app)
+            ccJob?.join()
+            ccSteerPending = false
+            runCcTurn(typed, files, steering = true)
+        }
+    }
+
+    /** True between a steer's stop and its new turn, so the stopped reply isn't marked as "Stopped." */
+    @Volatile private var ccSteerPending = false
+
+    /** The person stopped (or steered) this turn: an empty answer is then not an error. */
+    @Volatile private var ccStopRequested = false
+
+    private fun runCcTurn(typed: String, files: List<CcFile>, steering: Boolean) {
+        val app = getApplication<Application>()
+        val continueChat = steering || ccMessages.any { !it.fromUser && !it.failed }
         // Tell Claude Code where the attached files are (relative to its working folder, /root/files).
-        val text = if (files.isEmpty()) typed else buildString {
+        val text = buildString {
+            if (steering) append("[The person interrupted to steer you. Keep what you've done and follow this:]\n")
             append(typed.ifEmpty { "Look at the attached file" + (if (files.size > 1) "s." else ".") })
-            append("\n\nAttached file").append(if (files.size > 1) "s" else "").append(" (open with the Read tool):\n")
-            files.forEach { append("- ").append(it.path).append('\n') }
+            if (files.isNotEmpty()) {
+                append("\n\nAttached file").append(if (files.size > 1) "s" else "").append(" (open with the Read tool):\n")
+                files.forEach { append("- ").append(it.path).append('\n') }
+            }
         }
         ccPending.clear()
-        ccMessages += CcMessage(true, typed.ifEmpty { "(attached files)" } +
+        ccMessages += Message(fromUser = true, text = typed.ifEmpty { "(attached files)" } +
             if (files.isEmpty()) "" else "\n" + files.joinToString("\n") { "📎 " + it.name })
-        ccMessages += CcMessage(false, "", running = true)
+        ccLiveText = ""; ccLiveThinking = ""; ccLiveCommands.clear(); ccLiveMedia.clear()
+        ccStatus = "Starting Claude Code…"
+        ccStopRequested = false
         ccRunning = true
         val backend = if (ccBackend == "pro") com.arin.claudecode.ClaudeCode.Backend("pro", "", "", ccModel)
         else com.arin.claudecode.ClaudeCode.Backend(settings.ccCustomKind, settings.ccCustomBase, settings.ccCustomKey, ccModel)
+        val started = System.currentTimeMillis()
         ReplyService.start(app)
         ccJob = ArinApp.scope.launch {
-            fun show(t: com.arin.claudecode.ClaudeCode.Turn, running: Boolean) {
-                val idx = ccMessages.lastIndex
-                if (idx >= 0) ccMessages[idx] = CcMessage(false, t.text, t.steps, running, t.error)
+            var last = com.arin.claudecode.ClaudeCode.Turn("", "", emptyList(), null, false, false)
+            fun show(t: com.arin.claudecode.ClaudeCode.Turn) {
+                last = t
+                ccLiveText = t.text; ccLiveThinking = t.thinking
+                if (ccLiveCommands.size != t.runs.size || ccLiveCommands.lastOrNull() != t.runs.lastOrNull()) {
+                    ccLiveCommands.clear(); ccLiveCommands += t.runs
+                }
+                t.status?.let { ccStatus = it }
             }
+            var failed: String? = null
             try {
-                if (!com.arin.claudecode.ClaudeCode.startTurn(app, text, backend, continueChat)) {
-                    show(com.arin.claudecode.ClaudeCode.Turn("Couldn't start Claude Code. Check Settings → Claude Code.", emptyList(), true, true), false)
+                if (ccReaOn && com.arin.mcp.Mcp.connected(setOf(com.arin.mcp.Mcp.REA.name)).isEmpty()) {
+                    ccStatus = "Starting REA…"
+                    val problems = runCatching { com.arin.mcp.Mcp.connectAll(app, listOf(com.arin.mcp.Mcp.REA), canStart = true) }.getOrDefault(emptyList())
+                    if (problems.isNotEmpty()) notice = problems.joinToString("\n")
+                }
+                val (cfg, names) = ccMcpConfig()
+                val extras = com.arin.claudecode.ClaudeCode.Extras(cfg, names, githubToken())
+                if (!com.arin.claudecode.ClaudeCode.startTurn(app, text, backend, continueChat, extras)) {
+                    failed = "Couldn't start Claude Code. Check Settings → Claude Code."
                     return@launch
                 }
-                val deadline = System.currentTimeMillis() + 30 * 60_000L
+                val deadline = System.currentTimeMillis() + 60 * 60_000L
                 while (System.currentTimeMillis() < deadline) {
-                    kotlinx.coroutines.delay(1200)
+                    kotlinx.coroutines.delay(900)
                     val t = com.arin.claudecode.ClaudeCode.readTurn(app)
-                    show(t, !t.done)
+                    show(t)
                     if (t.done) {
-                        if (t.text.isBlank()) show(t.copy(text = "(No answer — check the model and API key.)", error = true), false)
+                        if (ccStopRequested) return@launch
+                        if (t.text.isBlank()) failed = "(No answer — check the model and API key in Settings → Claude Code.)"
+                        else if (t.error) failed = t.text
                         return@launch
                     }
                 }
-                show(com.arin.claudecode.ClaudeCode.Turn("Stopped after 30 minutes.", emptyList(), true, true), false)
+                failed = "Stopped after an hour."
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                show(com.arin.claudecode.ClaudeCode.Turn("Error: ${e.message}", emptyList(), true, true), false)
+                failed = "Error: ${e.message}"
             } finally {
+                val steered = ccSteerPending
+                val secs = ((System.currentTimeMillis() - started) / 1000).toInt()
+                val body = when {
+                    failed != null && last.text.isBlank() -> failed!!
+                    last.text.isNotBlank() -> last.text
+                    steered -> "(Interrupted to follow your new message.)"
+                    else -> "Stopped."
+                }
+                ccMessages += Message(
+                    fromUser = false,
+                    text = body,
+                    thinking = last.thinking,
+                    thoughtSeconds = if (last.thinking.isNotBlank()) secs else 0,
+                    commands = last.runs,
+                    media = ccLiveMedia.toList(),
+                    failed = failed != null && last.text.isBlank(),
+                )
+                ccLiveText = ""; ccLiveThinking = ""; ccLiveCommands.clear(); ccLiveMedia.clear()
+                ccStatus = null
                 ccRunning = false
                 saveCcChat()
                 ReplyService.stop(app)
@@ -873,16 +1030,19 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Ask again: resend the last message. */
+    fun retryClaudeCode() {
+        if (ccRunning) return
+        val lastUser = ccMessages.lastOrNull { it.fromUser } ?: return
+        val idx = ccMessages.indexOf(lastUser)
+        while (ccMessages.size > idx) ccMessages.removeAt(ccMessages.lastIndex)
+        runCcTurn(lastUser.text, emptyList(), steering = false)
+    }
+
     fun stopClaudeCode() {
         val app = getApplication<Application>()
-        ArinApp.scope.launch {
-            com.arin.claudecode.ClaudeCode.stopTurn(app)
-            ccJob?.cancel()
-            val idx = ccMessages.lastIndex
-            if (idx >= 0 && ccMessages[idx].running) ccMessages[idx] = ccMessages[idx].copy(running = false, text = ccMessages[idx].text.ifBlank { "Stopped." })
-            ccRunning = false
-            ReplyService.stop(app)
-        }
+        ccStopRequested = true
+        ArinApp.scope.launch { com.arin.claudecode.ClaudeCode.stopTurn(app) }
     }
 
     // ---- Movie Maker (film studio): your model directs; free tools render; ffmpeg cuts ----

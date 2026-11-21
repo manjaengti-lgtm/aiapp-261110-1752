@@ -301,7 +301,7 @@ object ClaudeCode {
         "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL",
         "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
         "CLAUDE_CODE_SUBAGENT_MODEL", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-        "DISABLE_AUTOUPDATER", "DISABLE_TELEMETRY", "DISABLE_ERROR_REPORTING",
+        "DISABLE_AUTOUPDATER", "DISABLE_TELEMETRY", "DISABLE_ERROR_REPORTING", "ENABLE_TOOL_SEARCH",
     )
 
     /**
@@ -332,7 +332,8 @@ object ClaudeCode {
         val settings = runCatching { org.json.JSONObject(settingsFile.readText()) }.getOrElse { org.json.JSONObject() }
         val env = settings.optJSONObject("env") ?: org.json.JSONObject()
         OWNED_ENV.forEach { env.remove(it) }
-        val quiet = mapOf("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" to "1", "DISABLE_AUTOUPDATER" to "1", "DISABLE_TELEMETRY" to "1", "DISABLE_ERROR_REPORTING" to "1")
+        val quiet = mapOf("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" to "1", "DISABLE_AUTOUPDATER" to "1", "DISABLE_TELEMETRY" to "1",
+            "DISABLE_ERROR_REPORTING" to "1", "ENABLE_TOOL_SEARCH" to "false")
         fun models(m: String) = listOf("ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
             "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL").associateWith { m }
         val bridgeEnv = java.io.File(root, BRIDGE_ENV.removePrefix("/"))
@@ -398,14 +399,23 @@ object ClaudeCode {
 
     private const val RUN_OUT = "/root/.cc_run.jsonl"
     private const val RUN_PROMPT = "/root/.cc_prompt.txt"
+    private const val MCP_CONFIG = "/root/.arin/cc-mcp.json"
+    private const val GIT_HELPER = "/root/.arin/git-credential-arin"
 
     /**
      * Start one turn in the background. The prompt goes in on stdin (no "no stdin data" wait), output is
      * stream-json so steps show live, and [continueChat] resumes the same Claude Code conversation.
      */
-    suspend fun startTurn(context: Context, prompt: String, b: Backend, continueChat: Boolean): Boolean {
+    /**
+     * Extra powers for a turn: [mcpConfig] = Claude Code MCP config JSON (Arin's tools, REA, the person's servers),
+     * [mcpServers] = their names (all their tools are allowed), [githubToken] = lets git push / gh work.
+     */
+    data class Extras(val mcpConfig: String = "", val mcpServers: List<String> = emptyList(), val githubToken: String = "")
+
+    suspend fun startTurn(context: Context, prompt: String, b: Backend, continueChat: Boolean, extras: Extras = Extras()): Boolean {
         val m = esc(b.model)
-        val quiet = "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1"
+        // ENABLE_TOOL_SEARCH=false: offer every tool (Arin's, REA's) directly; non-Claude models don't know to search for them.
+        val quiet = "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 ENABLE_TOOL_SEARCH=false"
         val models = "ANTHROPIC_MODEL='$m' ANTHROPIC_SMALL_FAST_MODEL='$m' ANTHROPIC_DEFAULT_OPUS_MODEL='$m' " +
             "ANTHROPIC_DEFAULT_SONNET_MODEL='$m' ANTHROPIC_DEFAULT_HAIKU_MODEL='$m' CLAUDE_CODE_SUBAGENT_MODEL='$m'"
         val env = when (b.kind) {
@@ -423,25 +433,56 @@ object ClaudeCode {
                 "export ANTHROPIC_BASE_URL='${esc(b.base)}' ANTHROPIC_AUTH_TOKEN='${esc(b.key)}' $models $quiet; "
         }
         val b64 = android.util.Base64.encodeToString(prompt.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+        val root = com.arin.terminal.Linux.rootfs(context)
+        java.io.File(root, "root/.arin").mkdirs()
+        // MCP servers: Arin's own features, REA when on, and the person's servers.
+        val mcpFlag = if (extras.mcpConfig.isNotBlank()) {
+            java.io.File(root, MCP_CONFIG.removePrefix("/")).apply { writeText(extras.mcpConfig); setReadable(false, false); setReadable(true, true) }
+            "--mcp-config $MCP_CONFIG "
+        } else ""
+        // GitHub: the person's sign-in from Settings, so `git push` and `gh` work. Given only to this process.
+        val gh = if (extras.githubToken.isNotBlank()) {
+            java.io.File(root, GIT_HELPER.removePrefix("/")).apply {
+                writeText("#!/bin/sh\n[ \"$1\" = get ] || exit 0\necho username=x-access-token\necho \"password=${'$'}GH_TOKEN\"\n")
+                setExecutable(true, false)
+            }
+            "export GH_TOKEN='${esc(extras.githubToken)}' GITHUB_TOKEN='${esc(extras.githubToken)}'; "
+        } else ""
+        val gitSetup = if (extras.githubToken.isNotBlank())
+            "command -v git >/dev/null || apt-get install -y git >/dev/null 2>&1; " +
+                "git config --global credential.https://github.com.helper $GIT_HELPER; " +
+                "git config --global user.name >/dev/null || git config --global user.name 'Arin'; " +
+                "git config --global user.email >/dev/null || git config --global user.email 'arin@users.noreply.github.com'; "
+        else ""
+        val tools = (listOf("Bash", "Read", "Edit", "Write", "MultiEdit", "Glob", "Grep", "WebFetch", "WebSearch", "TodoWrite", "NotebookEdit") +
+            extras.mcpServers.map { "mcp__$it" }).joinToString(" ")
         val flags = (if (continueChat) "--continue " else "") +
-            "--model '$m' --output-format stream-json --verbose " +
-            "--allowedTools Bash Read Edit Write Glob Grep WebFetch WebSearch TodoWrite"
+            "--model '$m' --output-format stream-json --verbose --include-partial-messages " + mcpFlag +
+            "--allowedTools $tools"
         val r = Shell.run(
             context,
             "pkill -f 'claude -[p]' 2>/dev/null; echo '$b64' | base64 -d > $RUN_PROMPT; rm -f $RUN_OUT; " +
-                "mkdir -p /root/files; cd /root/files; " +
-                "setsid bash -c \"$env claude -p $flags < $RUN_PROMPT > $RUN_OUT 2>&1; echo '{\\\"type\\\":\\\"arin_end\\\"}' >> $RUN_OUT\" >/dev/null 2>&1 & echo started",
+                "mkdir -p /root/files; cd /root/files; " + gitSetup +
+                "setsid bash -c \"$env $gh claude -p $flags < $RUN_PROMPT > $RUN_OUT 2>&1; echo '{\\\"type\\\":\\\"arin_end\\\"}' >> $RUN_OUT\" >/dev/null 2>&1 & echo started",
             60_000,
         )
         return r.stdout.contains("started")
     }
 
+    /** Stop the running turn. Writes the end marker itself, since the wrapper that would is stopped too. */
     suspend fun stopTurn(context: Context) {
-        Shell.run(context, "pkill -f 'claude -[p]' 2>/dev/null; echo ok", 30_000)
+        Shell.run(context, "pkill -f 'claude -[p]' 2>/dev/null; sleep 0.5; echo '{\"type\":\"arin_end\"}' >> $RUN_OUT; echo ok", 30_000)
     }
 
-    /** What the running turn has produced so far. */
-    data class Turn(val text: String, val steps: List<String>, val done: Boolean, val error: Boolean)
+    /** What the running turn has produced so far: like a chat reply (text, thinking, the steps it ran). */
+    data class Turn(
+        val text: String,
+        val thinking: String,
+        val runs: List<com.arin.data.CommandRun>,
+        val status: String?,
+        val done: Boolean,
+        val error: Boolean,
+    )
 
     suspend fun readTurn(context: Context): Turn {
         val raw = Shell.run(context, "cat $RUN_OUT 2>/dev/null", 30_000).stdout
@@ -450,26 +491,68 @@ object ClaudeCode {
 
     fun parseTurn(raw: String): Turn {
         val text = StringBuilder()
-        val steps = mutableListOf<String>()
+        val thinking = StringBuilder()
+        var partialText = StringBuilder()
+        var partialThinking = StringBuilder()
+        val calls = LinkedHashMap<String, Pair<String, String>>()   // tool id -> (name, description)
+        val results = HashMap<String, Pair<String, Boolean>>()       // tool id -> (output, isError)
+        var status: String? = null
         var done = false
         var error = false
         var result: String? = null
         val plain = StringBuilder()
+        fun addText(sb: StringBuilder, t: String) { if (t.isBlank()) return; if (sb.isNotEmpty()) sb.append("\n\n"); sb.append(t.trim()) }
         raw.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.forEach { line ->
             val o = runCatching { org.json.JSONObject(line) }.getOrNull()
-            if (o == null) { plain.append(line).append('\n'); return@forEach }
+            if (o == null) {
+                if (!line.startsWith("[claude-code:")) plain.append(line).append('\n')
+                return@forEach
+            }
             when (o.optString("type")) {
+                // Live deltas while a message is being written.
+                "stream_event" -> {
+                    val ev = o.optJSONObject("event") ?: return@forEach
+                    when (ev.optString("type")) {
+                        "message_start" -> { partialText = StringBuilder(); partialThinking = StringBuilder() }
+                        "content_block_delta" -> {
+                            val d = ev.optJSONObject("delta") ?: return@forEach
+                            when (d.optString("type")) {
+                                "text_delta" -> { partialText.append(d.optString("text")); status = "Writing…" }
+                                "thinking_delta" -> { partialThinking.append(d.optString("thinking")); status = "Thinking…" }
+                            }
+                        }
+                    }
+                }
+                // A finished message: its text, thinking and tool calls.
                 "assistant" -> {
+                    partialText = StringBuilder(); partialThinking = StringBuilder()
                     val content = o.optJSONObject("message")?.optJSONArray("content") ?: return@forEach
                     for (i in 0 until content.length()) {
                         val c = content.optJSONObject(i) ?: continue
                         when (c.optString("type")) {
-                            "text" -> c.optString("text").takeIf { it.isNotBlank() }?.let {
-                                if (text.isNotEmpty()) text.append("\n\n")
-                                text.append(it.trim())
+                            "text" -> addText(text, c.optString("text"))
+                            "thinking" -> addText(thinking, c.optString("thinking"))
+                            "tool_use" -> {
+                                val d = describeTool(c.optString("name"), c.optJSONObject("input"))
+                                calls[c.optString("id")] = c.optString("name") to d
+                                status = d
                             }
-                            "tool_use" -> steps += describeTool(c.optString("name"), c.optJSONObject("input"))
                         }
+                    }
+                }
+                // Tool results come back as a user message.
+                "user" -> {
+                    val content = o.optJSONObject("message")?.optJSONArray("content") ?: return@forEach
+                    for (i in 0 until content.length()) {
+                        val c = content.optJSONObject(i) ?: continue
+                        if (c.optString("type") != "tool_result") continue
+                        val out = when (val v = c.opt("content")) {
+                            is org.json.JSONArray -> (0 until v.length()).mapNotNull { v.optJSONObject(it)?.optString("text") }.joinToString("\n")
+                            null -> ""
+                            else -> v.toString()
+                        }
+                        results[c.optString("tool_use_id")] = out to c.optBoolean("is_error")
+                        status = "Working…"
                     }
                 }
                 "result" -> {
@@ -480,12 +563,27 @@ object ClaudeCode {
                 "arin_end" -> done = true
             }
         }
-        val finalText = when {
-            text.isNotEmpty() -> text.toString()
-            result != null -> result!!
-            else -> plain.toString().trim()   // e.g. an error printed before any JSON
+        val runs = calls.map { (id, nd) ->
+            val (name, desc) = nd
+            val res = results[id]
+            com.arin.data.CommandRun(
+                command = desc,
+                output = res?.first?.take(4000) ?: "",
+                exitCode = res?.let { if (it.second) 1 else 0 },
+                kind = if (name == "Bash") "terminal" else "tool",
+            )
         }
-        return Turn(finalText, steps, done, error || (done && text.isEmpty() && result == null && plain.isNotBlank()))
+        val allText = StringBuilder(text).also { addText(it, partialText.toString()) }.toString()
+        val allThinking = StringBuilder(thinking).also { addText(it, partialThinking.toString()) }.toString()
+        val finalText = when {
+            allText.isNotEmpty() -> allText
+            result != null -> result!!
+            else -> plain.toString().trim()
+        }
+        return Turn(
+            finalText, allThinking, runs, if (done) null else status, done,
+            error || (done && allText.isEmpty() && result == null && plain.isNotBlank()),
+        )
     }
 
     private fun describeTool(name: String, input: org.json.JSONObject?): String {
@@ -499,7 +597,12 @@ object ClaudeCode {
             "WebFetch" -> "Fetch " + arg("url").take(60)
             "WebSearch" -> "Search " + arg("query").take(60)
             "TodoWrite" -> "Updated the plan"
-            else -> name
+            else -> if (name.startsWith("mcp__")) {
+                val server = name.removePrefix("mcp__").substringBefore("__")
+                val t = name.substringAfterLast("__").replace('_', ' ')
+                val first = input?.keys()?.asSequence()?.firstOrNull()?.let { input.optString(it) }.orEmpty().take(60)
+                (if (server == "arin") "" else "$server: ") + t + if (first.isNotBlank()) " — $first" else ""
+            } else name
         }
     }
 }

@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -86,7 +87,29 @@ fun ClaudeCodeScreen(vm: ChatViewModel, onBack: () -> Unit, onOpenSettings: () -
             if (vm.ccInstalled && vm.ccSignedIn) {
                 IconButton(onClick = { vm.newCcChat() }, enabled = !vm.ccRunning) { Icon(Icons.Filled.Edit, contentDescription = "New chat") }
             }
-            IconButton(onClick = onOpenSettings) { Icon(Icons.Filled.Settings, contentDescription = "Claude Code settings") }
+            Box {
+                var menu by rememberSaveable { mutableStateOf(false) }
+                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(
+                        text = { Text((if (vm.ccReaOn) "✓ " else "") + "Reverse engineering (REA)") },
+                        onClick = { vm.toggleCcRea(!vm.ccReaOn); menu = false },
+                    )
+                    DropdownMenuItem(
+                        text = { Text((if (vm.showThinking) "✓ " else "") + "Show thinking") },
+                        onClick = { vm.toggleThinking(!vm.showThinking); menu = false },
+                    )
+                    DropdownMenuItem(text = { Text("Claude Code settings") }, onClick = { menu = false; onOpenSettings() })
+                }
+            }
+        }
+        if (vm.ccReaOn && vm.ccSignedIn) {
+            Text(
+                "🔍 Reverse engineering on — Claude Code can use REA's tools (decompile, inspect APKs…)",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
         }
 
         if (!vm.ccInstalled || !vm.ccSignedIn) {
@@ -150,14 +173,28 @@ private fun ColumnScope.Setup(content: @Composable ColumnScope.() -> Unit) {
 @Composable
 private fun Conversation(vm: ChatViewModel, modifier: Modifier) {
     val list = rememberLazyListState()
-    val last = vm.ccMessages.lastOrNull()
-    LaunchedEffect(vm.ccMessages.size, last?.text?.length, last?.steps?.size) {
-        if (vm.ccMessages.isNotEmpty()) list.animateScrollToItem(vm.ccMessages.lastIndex)
+    LaunchedEffect(vm.ccMessages.size, vm.ccLiveText.length, vm.ccLiveCommands.size, vm.ccRunning) {
+        val n = vm.ccMessages.size + if (vm.ccRunning) 1 else 0
+        if (n > 0) list.animateScrollToItem(n - 1)
     }
-    if (vm.ccMessages.isEmpty()) {
+    // Summary of a reply's steps (commands, files, tools), like the chat tab.
+    var stepsFor by rememberSaveable { mutableStateOf<String?>(null) }
+    stepsFor?.let { id ->
+        if (id == "live") com.arin.builder.StepsSummarySheet(
+            steps = com.arin.chat.chatSteps(vm.ccLiveCommands.toList(), finished = !vm.ccRunning),
+            running = vm.ccRunning, doing = vm.ccStatus ?: "Working", onClose = { stepsFor = null },
+        ) else vm.ccMessages.firstOrNull { it.id == id }?.let { m ->
+            com.arin.builder.StepsSummarySheet(
+                steps = com.arin.chat.chatSteps(m.commands, finished = true, failed = m.failed),
+                running = false, doing = "", onClose = { stepsFor = null },
+            )
+        }
+    }
+    if (vm.ccMessages.isEmpty() && !vm.ccRunning) {
         Box(modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
             Text(
-                "Ask Claude Code to build, fix or explain something.\nIt works in your Linux files folder and can run commands.",
+                "Ask Claude Code to build, fix or explain something.\nIt can run commands, search the web, push to GitHub, " +
+                    "make movies, build APKs" + (if (vm.ccReaOn) " and reverse engineer apps with REA." else "."),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -167,49 +204,24 @@ private fun Conversation(vm: ChatViewModel, modifier: Modifier) {
     LazyColumn(
         modifier.fillMaxWidth(),
         state = list,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        itemsIndexed(vm.ccMessages) { _, m -> if (m.fromUser) UserBubble(m.text) else AssistantMessage(m) }
-    }
-}
-
-@Composable
-private fun UserBubble(text: String) {
-    val extras = LocalArinExtras.current
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        Surface(color = extras.userBubble, contentColor = extras.onUserBubble, shape = RoundedCornerShape(20.dp), modifier = Modifier.widthIn(max = 320.dp)) {
-            Text(text, Modifier.padding(horizontal = 14.dp, vertical = 10.dp), style = MaterialTheme.typography.bodyLarge)
+        itemsIndexed(vm.ccMessages, key = { _, m -> m.id }) { i, m ->
+            if (m.fromUser) com.arin.chat.UserMessage(m, onEdit = null)
+            else com.arin.chat.ArinMessage(
+                m, vm.showThinking,
+                isLast = i == vm.ccMessages.lastIndex && !vm.ccRunning,
+                onRetry = vm::retryClaudeCode,
+                onSummary = if (m.commands.isNotEmpty()) ({ stepsFor = m.id }) else null,
+            )
         }
-    }
-}
-
-@Composable
-private fun AssistantMessage(m: ChatViewModel.CcMessage) {
-    val colors = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth()) {
-        // The steps Claude Code took (commands, files), like a work log.
-        if (m.steps.isNotEmpty()) {
-            Surface(color = colors.surfaceVariant, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(10.dp)) {
-                    m.steps.takeLast(8).forEach {
-                        Text("› $it", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    if (m.steps.size > 8) Text("…and ${m.steps.size - 8} earlier steps", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-        }
-        if (m.text.isNotBlank()) {
-            if (m.error) Text(m.text, color = colors.error, style = MaterialTheme.typography.bodyMedium)
-            else MarkdownText(m.text)
-        }
-        if (m.running) {
-            Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(8.dp))
-                Text(if (m.steps.isEmpty() && m.text.isBlank()) "Thinking…" else "Working…", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        if (vm.ccRunning) {
+            item(key = "live") {
+                com.arin.chat.LiveReply(
+                    vm.ccLiveText, vm.ccLiveThinking, vm.showThinking, vm.ccStatus, vm.ccLiveCommands.toList(),
+                    onSummary = { stepsFor = "live" },
+                )
             }
         }
     }
@@ -269,7 +281,7 @@ private fun Composer(vm: ChatViewModel) {
         Surface(color = colors.surfaceContainerHigh, shape = RoundedCornerShape(28.dp)) {
             Row(Modifier.padding(6.dp), verticalAlignment = Alignment.Bottom) {
                 Box {
-                    IconButton(onClick = { attachMenu = true }, enabled = !vm.ccRunning) { Icon(Icons.Filled.Add, contentDescription = "Attach") }
+                    IconButton(onClick = { attachMenu = true }) { Icon(Icons.Filled.Add, contentDescription = "Attach") }
                     DropdownMenu(expanded = attachMenu, onDismissRequest = { attachMenu = false }) {
                         DropdownMenuItem(text = { Text("Camera") }, onClick = { attachMenu = false; openCamera() })
                         DropdownMenuItem(text = { Text("Photos") }, onClick = {
@@ -286,7 +298,7 @@ private fun Composer(vm: ChatViewModel) {
                 TextField(
                     value = text,
                     onValueChange = { text = it },
-                    placeholder = { Text("Message Claude Code") },
+                    placeholder = { Text(if (vm.ccRunning) "Steer Claude Code while it works…" else "Message Claude Code") },
                     maxLines = 6,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                     colors = TextFieldDefaults.colors(
@@ -299,7 +311,12 @@ private fun Composer(vm: ChatViewModel) {
                     ),
                     modifier = Modifier.weight(1f),
                 )
-                if (vm.ccRunning) {
+                if (vm.ccRunning && (text.isNotBlank() || vm.ccPending.isNotEmpty())) {
+                    // Sending now steers the running reply.
+                    FilledIconButton(onClick = { vm.askClaudeCode(text); text = "" }, shape = CircleShape, enabled = !vm.ccAttaching) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Steer", modifier = Modifier.size(20.dp))
+                    }
+                } else if (vm.ccRunning) {
                     FilledIconButton(
                         onClick = { vm.stopClaudeCode() },
                         shape = CircleShape,
