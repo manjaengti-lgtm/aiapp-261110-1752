@@ -13,7 +13,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.HorizontalDivider
+import com.arin.civicreport.data.GoogleMailer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -54,6 +60,17 @@ fun MailAccountCard(vm: ReportViewModel, startOpen: Boolean = false) {
     var ssl by remember { mutableStateOf(saved.ssl) }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
+    var googleBusy by remember { mutableStateOf(false) }
+    var showOther by remember { mutableStateOf(saved.isSet && !saved.google) }
+    val googleApproval = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
+        scope.launch {
+            val auth = if (res.resultCode == android.app.Activity.RESULT_OK) vm.googleResult(res.data)
+            else GoogleMailer.Auth.Failed("Sign-in was cancelled.")
+            status = vm.finishGoogleSignIn(auth)?.let { "Not signed in: $it" }
+            googleBusy = false
+            if (status == null) editing = false
+        }
+    }
 
     fun current() = MailAccount(provider, email.trim(), password.replace(" ", ""), host.trim(), port.toIntOrNull() ?: 587, ssl)
 
@@ -62,7 +79,8 @@ fun MailAccountCard(vm: ReportViewModel, startOpen: Boolean = false) {
             Text("Your email account for sending", style = MaterialTheme.typography.titleMedium)
             if (!editing && saved.isSet) {
                 Text(
-                    "Complaints are sent automatically from ${saved.email}. Replies from offices come to this inbox.",
+                    (if (saved.google) "Signed in with Google. " else "") +
+                        "Complaints are sent automatically from ${saved.email}. Replies from offices come to this inbox.",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 TextButton(onClick = { editing = true }) { Text("Change") }
@@ -73,6 +91,39 @@ fun MailAccountCard(vm: ReportViewModel, startOpen: Boolean = false) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Button(
+                enabled = !googleBusy,
+                onClick = {
+                    googleBusy = true; status = null
+                    scope.launch {
+                        when (val auth = vm.startGoogleSignIn()) {
+                            is GoogleMailer.Auth.NeedsApproval ->
+                                googleApproval.launch(IntentSenderRequest.Builder(auth.intent.intentSender).build())
+                            else -> {
+                                status = vm.finishGoogleSignIn(auth)?.let { "Not signed in: $it" }
+                                googleBusy = false
+                                if (status == null) editing = false
+                            }
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (googleBusy) CircularProgressIndicator(Modifier.size(16.dp)) else Text("Continue with Google")
+            }
+            Text(
+                "Pick the Gmail account already on this phone and tap Allow. No password needed.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            status?.let {
+                Text(it, color = if (it.startsWith("Connected")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+            }
+            HorizontalDivider()
+            TextButton(onClick = { showOther = !showOther }) {
+                Text(if (showOther) "Hide other email options" else "Use Yahoo, Zoho, Rediff or another email instead")
+            }
+            if (!showOther) return@Column
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 MailProvider.entries.take(3).forEach { p ->
                     FilterChip(selected = provider == p, onClick = {
@@ -129,9 +180,6 @@ fun MailAccountCard(vm: ReportViewModel, startOpen: Boolean = false) {
                     Text("SSL (465)")
                     Switch(checked = ssl, onCheckedChange = { ssl = it })
                 }
-            }
-            status?.let {
-                Text(it, color = if (it.startsWith("Connected")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
             }
             val valid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches() && password.isNotBlank() && host.isNotBlank()
             Row(verticalAlignment = Alignment.CenterVertically) {

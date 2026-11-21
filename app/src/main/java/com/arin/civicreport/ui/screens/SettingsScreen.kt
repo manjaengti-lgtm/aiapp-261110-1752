@@ -180,7 +180,7 @@ fun SettingsScreen(vm: ReportViewModel, onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    "Complaints are saved inside this phone. They leave only when you press Send now: email from your own account, SMS from your SIM. The mail password is kept encrypted on this phone.",
+                    "Complaints are saved inside this phone. They leave only when you press Send now: email from your own account, SMS from your SIM. With Google sign-in the app never sees your password; you can remove its access any time at myaccount.google.com/connections.",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(14.dp)
                 )

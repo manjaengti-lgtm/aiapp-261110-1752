@@ -88,6 +88,8 @@ enum class MailProvider(
 }
 
 data class MailAccount(
+    /** True when the person signed in with the Google account already on the phone. */
+    val google: Boolean = false,
     val provider: MailProvider = MailProvider.GMAIL,
     val email: String = "",
     val password: String = "",
@@ -95,7 +97,7 @@ data class MailAccount(
     val port: Int = MailProvider.GMAIL.port,
     val ssl: Boolean = true
 ) {
-    val isSet: Boolean get() = email.isNotBlank() && password.isNotBlank() && host.isNotBlank()
+    val isSet: Boolean get() = email.isNotBlank() && (google || (password.isNotBlank() && host.isNotBlank()))
 }
 
 /** Keeps the mail password encrypted with a key that never leaves the phone's keystore. */
@@ -133,6 +135,7 @@ class MailAccountStore(context: Context) {
         val provider = runCatching { MailProvider.valueOf(prefs.getString("provider", "GMAIL")!!) }
             .getOrDefault(MailProvider.GMAIL)
         return MailAccount(
+            google = prefs.getBoolean("google", false),
             provider = provider,
             email = prefs.getString("email", "").orEmpty(),
             password = prefs.getString("password", null)?.let { decrypt(it) }.orEmpty(),
@@ -142,8 +145,13 @@ class MailAccountStore(context: Context) {
         )
     }
 
+    fun saveGoogle(email: String) {
+        prefs.edit().clear().putBoolean("google", true).putString("email", email).apply()
+    }
+
     fun save(a: MailAccount) {
         prefs.edit()
+            .putBoolean("google", false)
             .putString("provider", a.provider.name)
             .putString("email", a.email.trim())
             .putString("password", encrypt(a.password.replace(" ", "")))
@@ -159,6 +167,7 @@ class MailAccountStore(context: Context) {
 class AutoSender(private val context: Context, private val helper: SendHelper) {
 
     val accounts = MailAccountStore(context)
+    val google = GoogleMailer(context)
 
     data class Outcome(
         val emailedTo: List<String> = emptyList(),
@@ -277,42 +286,55 @@ class AutoSender(private val context: Context, private val helper: SendHelper) {
             }
             if (batches.isEmpty()) batches += mutableListOf<Part>()
 
-            val session = session(a)
             val total = batches.size
+            val session = if (a.google) Session.getInstance(Properties()) else session(a)
+
+            fun build(i: Int, batch: List<Part>): MimeMessage = MimeMessage(session).apply {
+                setFrom(InternetAddress(a.email, senderName.ifBlank { a.email }, "UTF-8"))
+                setRecipients(Message.RecipientType.TO, primary.joinToString(","))
+                if (cc.isNotEmpty()) setRecipients(Message.RecipientType.CC, cc.joinToString(","))
+                replyTo = arrayOf(InternetAddress(a.email))
+                setSubject(if (total > 1) "$subject (part ${i + 1} of $total)" else subject, "UTF-8")
+                sentDate = Date()
+                val text = buildString {
+                    if (i > 0) appendLine("Further evidence for the complaint below (part ${i + 1} of $total).\n")
+                    append(body)
+                    if (tooBig.isNotEmpty()) {
+                        appendLine("\n")
+                        appendLine("These files are too large to email and are available on request:")
+                        tooBig.forEach { appendLine("- ${it.name}") }
+                    }
+                }
+                val mp = MimeMultipart()
+                mp.addBodyPart(MimeBodyPart().apply { setText(text, "UTF-8") })
+                batch.forEach { p ->
+                    mp.addBodyPart(MimeBodyPart().apply {
+                        dataHandler = DataHandler(UriSource(context, p.uri, p.name, p.mime))
+                        fileName = p.name
+                    })
+                }
+                setContent(mp)
+                saveChanges()
+            }
+
             runCatching {
-                session.getTransport("smtp").use { transport ->
-                    onProgress("Connecting to ${a.host}…")
-                    transport.connect(a.host, a.port, a.email, a.password)
+                if (a.google) {
+                    onProgress("Connecting to Gmail…")
+                    val token = google.token()
+                        ?: return@withContext Outcome(error = "Google sign-in has expired. Tap \"Continue with Google\" again.")
                     batches.forEachIndexed { i, batch ->
                         onProgress(if (total > 1) "Sending email ${i + 1} of $total…" else "Sending email…")
-                        val msg = MimeMessage(session).apply {
-                            setFrom(InternetAddress(a.email, senderName.ifBlank { a.email }, "UTF-8"))
-                            setRecipients(Message.RecipientType.TO, primary.joinToString(","))
-                            if (cc.isNotEmpty()) setRecipients(Message.RecipientType.CC, cc.joinToString(","))
-                            replyTo = arrayOf(InternetAddress(a.email))
-                            setSubject(if (total > 1) "$subject (part ${i + 1} of $total)" else subject, "UTF-8")
-                            sentDate = Date()
-                            val text = buildString {
-                                if (i > 0) appendLine("Further evidence for the complaint below (part ${i + 1} of $total).\n")
-                                append(body)
-                                if (tooBig.isNotEmpty()) {
-                                    appendLine("\n")
-                                    appendLine("These files are too large to email and are available on request:")
-                                    tooBig.forEach { appendLine("- ${it.name}") }
-                                }
-                            }
-                            val mp = MimeMultipart()
-                            mp.addBodyPart(MimeBodyPart().apply { setText(text, "UTF-8") })
-                            batch.forEach { p ->
-                                mp.addBodyPart(MimeBodyPart().apply {
-                                    dataHandler = DataHandler(UriSource(context, p.uri, p.name, p.mime))
-                                    fileName = p.name
-                                })
-                            }
-                            setContent(mp)
+                        google.send(token, build(i, batch))
+                    }
+                } else {
+                    session.getTransport("smtp").use { transport ->
+                        onProgress("Connecting to ${a.host}…")
+                        transport.connect(a.host, a.port, a.email, a.password)
+                        batches.forEachIndexed { i, batch ->
+                            onProgress(if (total > 1) "Sending email ${i + 1} of $total…" else "Sending email…")
+                            val msg = build(i, batch)
+                            transport.sendMessage(msg, msg.allRecipients)
                         }
-                        msg.saveChanges()
-                        transport.sendMessage(msg, msg.allRecipients)
                     }
                 }
                 Outcome(emailedTo = primary + cc, emailParts = total, skippedFiles = tooBig.map { it.name })

@@ -273,6 +273,26 @@ class ReportViewModel(app: Application) : AndroidViewModel(app) {
         _mailAccount.value = autoSender.accounts.load()
     }
 
+    /** First step of "Continue with Google": either access is already there, or Google's approval screen must be shown. */
+    suspend fun startGoogleSignIn(): com.arin.civicreport.data.GoogleMailer.Auth = autoSender.google.authorize()
+
+    /** Finishes sign-in with the token; returns an error message, or null when the account is saved. */
+    suspend fun finishGoogleSignIn(auth: com.arin.civicreport.data.GoogleMailer.Auth): String? = when (auth) {
+        is com.arin.civicreport.data.GoogleMailer.Auth.Granted -> {
+            val email = autoSender.google.emailFor(auth.token)
+            if (email == null) "Signed in, but could not read the Gmail address. Check your internet and try again."
+            else {
+                autoSender.accounts.saveGoogle(email)
+                _mailAccount.value = autoSender.accounts.load()
+                null
+            }
+        }
+        is com.arin.civicreport.data.GoogleMailer.Auth.Failed -> auth.message
+        is com.arin.civicreport.data.GoogleMailer.Auth.NeedsApproval -> "Approval is still needed."
+    }
+
+    fun googleResult(data: android.content.Intent?) = autoSender.google.resultFrom(data)
+
     suspend fun testMailAccount(a: com.arin.civicreport.data.MailAccount): String? =
         autoSender.test(a.copy(password = a.password.replace(" ", "")))
 

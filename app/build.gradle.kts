@@ -12,8 +12,8 @@
                 applicationId = "com.arin.civicreport"
                 minSdk = 26
                 targetSdk = 37
-                versionCode = 2
-                versionName = "1.1"
+                versionCode = 3
+                versionName = "1.2"
             }
             signingConfigs {
                 // Created once by the workflow and kept in the repo, so every build installs over the last one.
@@ -69,6 +69,7 @@ implementation("androidx.camera:camera-lifecycle:1.7.0-rc02")
 implementation("androidx.camera:camera-video:1.7.0-rc02")
 implementation("androidx.camera:camera-view:1.7.0-rc02")
 implementation("com.google.android.gms:play-services-location:21.4.0")
+implementation("com.google.android.gms:play-services-auth:22.0.0")
 implementation("com.sun.mail:android-mail:1.6.7")
 implementation("com.sun.mail:android-activation:1.6.7")
         }
