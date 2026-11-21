@@ -215,7 +215,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Speak a one-line sample in the currently chosen voice engine, so the person can hear it from Settings. */
     fun previewVoice() {
         runCatching { voicePreview?.close() }
-        val nv = com.arin.voice.NeuralVoice(app.cacheDir)
+        val nv = com.arin.voice.NeuralVoice(getApplication<android.app.Application>().cacheDir)
         nv.voice = settings.voiceName
         if (settings.voiceEngine == "openai" && settings.voiceKey.isNotBlank()) {
             nv.engine = com.arin.voice.NeuralVoice.Engine.OpenAI
