@@ -133,6 +133,13 @@ class NeuralVoice(private val cacheDir: File) {
         runCatching { file.writeBytes(bytes) }
         suspendCancellableCoroutine<Unit> { cont ->
             val mp = MediaPlayer()
+            // Route to the active media output — phone speaker, or the car / Bluetooth speaker when connected.
+            mp.setAudioAttributes(
+                android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
             player = mp
             fun finish() {
                 runCatching { mp.release() }

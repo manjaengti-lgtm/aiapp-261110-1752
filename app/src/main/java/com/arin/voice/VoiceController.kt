@@ -45,6 +45,9 @@ class VoiceController(
     private val queued = AtomicInteger(0)
     private var replyDone = false
     private var closed = false
+    // Continuous mode: keep the mic open turn after turn; only a tap (or closing) stops it.
+    private var userPaused = false
+    private var errorRetries = 0
     var rate = 1.0f
 
     /** Use the natural ChatGPT-style voice (Pollinations) instead of the robotic phone voice. */
@@ -57,11 +60,33 @@ class VoiceController(
     /** OpenAI key for the ChatGPT voice engine (only used when [voiceOpenAi] is on). */
     var voiceKey = ""
     private var neural: NeuralVoice? = null
+    private val audioManager by lazy { context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager }
+    private var focusRequest: android.media.AudioFocusRequest? = null
     private val fillerHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var fillerRunnable: Runnable? = null
     private var spokeThisReply = false
 
+    private val audioAttributes = android.media.AudioAttributes.Builder()
+        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
+
+    /** Take audio focus so the car/Bluetooth switches to Arin and other apps duck while it talks. */
+    private fun requestAudioFocus() {
+        val req = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+            .setAudioAttributes(audioAttributes)
+            .build()
+        focusRequest = req
+        runCatching { audioManager.requestAudioFocus(req) }
+    }
+
+    private fun abandonAudioFocus() {
+        focusRequest?.let { fr -> runCatching { audioManager.abandonAudioFocusRequest(fr) } }
+        focusRequest = null
+    }
+
     fun start() {
+        requestAudioFocus()
         if (naturalVoice) {
             neural = NeuralVoice(context.cacheDir).also {
                 it.voice = voiceName
@@ -82,6 +107,7 @@ class VoiceController(
             ttsReady = status == TextToSpeech.SUCCESS
             if (ttsReady) {
                 tts?.language = Locale.getDefault()
+                tts?.setAudioAttributes(audioAttributes)
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(id: String?) {}
                     override fun onDone(id: String?) { mainThread { onUtteranceEnded() } }
@@ -105,6 +131,8 @@ class VoiceController(
         tts?.stop()
         neural?.stop()
         queued.set(0)
+        userPaused = false
+        errorRetries = 0
         partial = ""
         error = null
         state = VoiceState.Listening
@@ -134,19 +162,28 @@ class VoiceController(
     private fun scheduleFiller() {
         cancelFiller()
         val r = Runnable {
-            if (!closed && !spokeThisReply && state == VoiceState.Thinking) {
+            // Only when the wait is genuinely long, and only now and then — not a reflex every turn.
+            if (!closed && !spokeThisReply && state == VoiceState.Thinking && Math.random() < FILLER_CHANCE) {
                 state = VoiceState.Speaking
                 queued.incrementAndGet()
                 neural?.speak(FILLERS.random())
             }
         }
         fillerRunnable = r
-        fillerHandler.postDelayed(r, 700)
+        fillerHandler.postDelayed(r, FILLER_DELAY_MS)
     }
 
     private fun cancelFiller() {
         fillerRunnable?.let { fillerHandler.removeCallbacks(it) }
         fillerRunnable = null
+    }
+
+    /** Re-arm the mic after a short gap so the conversation continues without a tap. */
+    private fun reListen(delayMs: Long) {
+        if (closed || userPaused) return
+        fillerHandler.postDelayed({
+            if (!closed && !userPaused && state != VoiceState.Speaking && state != VoiceState.Thinking) listen()
+        }, delayMs)
     }
 
     /** Speak one sentence of the reply. */
@@ -173,12 +210,13 @@ class VoiceController(
         if (queued.get() == 0 && state != VoiceState.Listening) listen()
     }
 
-    /** Tap on the orb: stop talking and listen, or stop listening. */
+    /** Tap on the orb: interrupt and listen, or pause the continuous listening. */
     fun tap() {
         when (state) {
             VoiceState.Speaking, VoiceState.Thinking -> { onInterrupt(); replyDone = true; listen() }
             VoiceState.Paused -> listen()
-            VoiceState.Listening -> { recognizer?.stopListening() }
+            // Tapping while it's listening pauses the conversation until the next tap.
+            VoiceState.Listening -> { userPaused = true; cancelFiller(); runCatching { recognizer?.cancel() }; state = VoiceState.Paused }
             VoiceState.Starting -> {}
         }
     }
@@ -186,6 +224,7 @@ class VoiceController(
     fun close() {
         closed = true
         cancelFiller()
+        abandonAudioFocus()
         runCatching { recognizer?.destroy() }
         runCatching { tts?.stop(); tts?.shutdown() }
         runCatching { neural?.close() }
@@ -224,26 +263,32 @@ class VoiceController(
         }
         override fun onEvent(eventType: Int, params: Bundle?) {}
         override fun onResults(results: Bundle?) {
+            errorRetries = 0
             val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
-            if (text.isEmpty()) { state = VoiceState.Paused; return }
+            // Nothing recognised: keep listening rather than stopping.
+            if (text.isEmpty()) { if (!userPaused) reListen(250) else state = VoiceState.Paused; return }
             partial = text
             state = VoiceState.Thinking
             onHeard(text)
         }
         override fun onError(code: Int) {
             level = 0f
+            // Tapped to stop, or shutting down: stay paused.
+            if (closed || userPaused) { state = VoiceState.Paused; return }
             when (code) {
-                // Heard nothing: wait for a tap rather than listening forever.
-                SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> state = VoiceState.Paused
+                // Heard nothing this turn: keep listening so the chat flows without a tap.
+                SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> reListen(250)
                 SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
                     error = "Arin needs microphone permission for voice mode."
                     state = VoiceState.Paused
                 }
+                // The recognizer can't run two sessions at once; back off briefly and retry.
+                SpeechRecognizer.ERROR_RECOGNIZER_BUSY, SpeechRecognizer.ERROR_CLIENT -> reListen(400)
                 SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT, SpeechRecognizer.ERROR_SERVER -> {
-                    error = "Speech recognition needs an internet connection right now."
-                    state = VoiceState.Paused
+                    if (errorRetries++ < 3) reListen(900)
+                    else { error = "Speech recognition needs an internet connection right now."; state = VoiceState.Paused }
                 }
-                else -> state = VoiceState.Paused
+                else -> if (errorRetries++ < 3) reListen(600) else state = VoiceState.Paused
             }
         }
     }
@@ -253,6 +298,10 @@ class VoiceController(
     }
 
     companion object {
+        /** Only fill the silence after a real wait, and only this fraction of the time. */
+        private const val FILLER_DELAY_MS = 2200L
+        private const val FILLER_CHANCE = 0.3
+
         /** Short, human "thinking out loud" lines played while the reply is still being formed. */
         val FILLERS = listOf(
             "Hmm, let me think.",

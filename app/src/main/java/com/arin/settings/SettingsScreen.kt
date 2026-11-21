@@ -212,22 +212,21 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
                             label = { Text("OpenAI key · more expressive") },
                         )
                     }
-                    if (engine == "openai") {
-                        var vkey by remember { mutableStateOf(vm.settings.voiceKey) }
-                        OutlinedTextField(
-                            value = vkey,
-                            onValueChange = { vkey = it; vm.settings.voiceKey = it.trim() },
-                            placeholder = { Text("OpenAI API key (sk-…)") },
-                            singleLine = true,
-                            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Text(
-                            "Your own OpenAI key. Only the voice uses it — your chat still runs on the API you picked. Costs a small amount per reply.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    var vkey by remember { mutableStateOf(vm.settings.voiceKey) }
+                    OutlinedTextField(
+                        value = vkey,
+                        onValueChange = { vkey = it; vm.settings.voiceKey = it.trim() },
+                        label = { Text("OpenAI key (for the OpenAI engine)") },
+                        placeholder = { Text("sk-…") },
+                        singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "Used only when the OpenAI engine is selected. Only the voice uses it — your chat still runs on the API you picked. Costs a small amount per reply. Leave blank to use the free voice.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     var picked by remember { mutableStateOf(vm.settings.voiceName) }
                     Text("Voice", style = MaterialTheme.typography.bodyLarge)
                     androidx.compose.foundation.layout.FlowRow(
