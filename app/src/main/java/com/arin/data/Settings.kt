@@ -162,6 +162,16 @@ class Settings(context: Context) {
         get() = prefs.getString("voice_name", "nova") ?: "nova"
         set(value) = prefs.edit().putString("voice_name", value.trim()).apply()
 
+    /** Voice engine: "free" (keyless) or "openai" (the real ChatGPT voice, uses [voiceKey]). */
+    var voiceEngine: String
+        get() = prefs.getString("voice_engine", "free") ?: "free"
+        set(value) = prefs.edit().putString("voice_engine", value).apply()
+
+    /** OpenAI key used only for the ChatGPT voice engine (kept with the other encrypted keys). */
+    var voiceKey: String
+        get() = secret("voice_openai")
+        set(value) = setSecret("voice_openai", value)
+
     /** Other secrets kept with the API keys, such as the GitHub token Build mode uses. */
     fun secret(name: String): String = keys.getString("extra_$name", "").orEmpty()
 

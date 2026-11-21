@@ -74,6 +74,8 @@ fun VoiceMode(vm: ChatViewModel, onClose: () -> Unit) {
         voice.rate = vm.settings.voiceRate
         voice.naturalVoice = vm.settings.voiceNatural
         voice.voiceName = vm.settings.voiceName
+        voice.voiceOpenAi = vm.settings.voiceEngine == "openai"
+        voice.voiceKey = vm.settings.voiceKey
         vm.voiceMode = true
         voice.start()
         onDispose {

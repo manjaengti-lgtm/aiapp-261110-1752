@@ -52,6 +52,10 @@ class VoiceController(
     /** Which natural voice: nova, shimmer, alloy, echo, fable, onyx. */
     var voiceName = "nova"
         set(v) { field = v; neural?.voice = v }
+    /** Use the real ChatGPT voice engine (OpenAI) instead of the free keyless one. */
+    var voiceOpenAi = false
+    /** OpenAI key for the ChatGPT voice engine (only used when [voiceOpenAi] is on). */
+    var voiceKey = ""
     private var neural: NeuralVoice? = null
     private val fillerHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var fillerRunnable: Runnable? = null
@@ -59,7 +63,15 @@ class VoiceController(
 
     fun start() {
         if (naturalVoice) {
-            neural = NeuralVoice(context.cacheDir).also { it.voice = voiceName }
+            neural = NeuralVoice(context.cacheDir).also {
+                it.voice = voiceName
+                // The ChatGPT voice engine only kicks in when it's chosen AND a key is present;
+                // otherwise stay on the free keyless voice rather than falling to the robotic one.
+                if (voiceOpenAi && voiceKey.isNotBlank()) {
+                    it.engine = NeuralVoice.Engine.OpenAI
+                    it.apiKey = voiceKey
+                }
+            }
             neural?.start(
                 onClipDone = { mainThread { onUtteranceEnded() } },
                 onFallback = { text -> mainThread { if (!closed) deviceSpeak(text, counted = true) } },

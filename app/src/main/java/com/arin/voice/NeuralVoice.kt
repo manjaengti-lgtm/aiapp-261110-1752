@@ -10,8 +10,10 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
@@ -23,8 +25,13 @@ import java.util.concurrent.TimeUnit
  * can't be fetched (offline), it calls [onFallback] so the caller can use the phone's own voice instead.
  */
 class NeuralVoice(private val cacheDir: File) {
+    enum class Engine { Free, OpenAI }
+
     /** One of: alloy, echo, fable, onyx, nova, shimmer. */
     @Volatile var voice = "nova"
+    /** Free = keyless Pollinations; OpenAI = the real ChatGPT voice engine with [apiKey]. */
+    @Volatile var engine = Engine.Free
+    @Volatile var apiKey = ""
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -76,12 +83,13 @@ class NeuralVoice(private val cacheDir: File) {
     }
 
     private fun fetch(text: String): ByteArray? {
-        val key = "$voice|$text"
+        val key = "$engine|$voice|$text"
         cache[key]?.let { return it }
         return runCatching {
-            val t = text.take(900)
-            val url = "https://text.pollinations.ai/" + URLEncoder.encode(t, "UTF-8") + "?model=openai-audio&voice=" + voice
-            val req = Request.Builder().url(url).header("User-Agent", "Arin-Android").build()
+            val req = when (engine) {
+                Engine.OpenAI -> openAiRequest(text) ?: return null
+                Engine.Free -> pollinationsRequest(text)
+            }
             http.newCall(req).execute().use { r ->
                 val body = r.body ?: return null
                 val bytes = body.bytes()
@@ -91,6 +99,29 @@ class NeuralVoice(private val cacheDir: File) {
                 if (!ok) null else bytes.also { if (text.length <= 48) cache[key] = it }
             }
         }.getOrNull()
+    }
+
+    private fun pollinationsRequest(text: String): Request {
+        val t = text.take(900)
+        val url = "https://text.pollinations.ai/" + URLEncoder.encode(t, "UTF-8") + "?model=openai-audio&voice=" + voice
+        return Request.Builder().url(url).header("User-Agent", "Arin-Android").build()
+    }
+
+    /** The ChatGPT voice engine: gpt-4o-mini-tts with an emotion-steering instruction. */
+    private fun openAiRequest(text: String): Request? {
+        if (apiKey.isBlank()) return null
+        val payload = org.json.JSONObject()
+            .put("model", "gpt-4o-mini-tts")
+            .put("input", text.take(1500))
+            .put("voice", voice)
+            .put("instructions", OPENAI_STYLE)
+            .put("response_format", "mp3")
+            .toString()
+        return Request.Builder()
+            .url("https://api.openai.com/v1/audio/speech")
+            .header("Authorization", "Bearer $apiKey")
+            .post(payload.toRequestBody("application/json".toMediaType()))
+            .build()
     }
 
     private suspend fun playAndWait(bytes: ByteArray) = withContext(Dispatchers.Main) {
@@ -120,5 +151,9 @@ class NeuralVoice(private val cacheDir: File) {
 
     companion object {
         val VOICES = listOf("nova", "shimmer", "alloy", "echo", "fable", "onyx")
+        /** Tone steering for the ChatGPT voice engine, so it sounds warm and human rather than flat. */
+        const val OPENAI_STYLE = "Speak like a warm, friendly voice assistant on a phone call: natural, " +
+            "upbeat and conversational, with easy pacing and small natural pauses. Let a little emotion through — " +
+            "a light laugh when something is funny, a thoughtful 'hmm' when considering something. Never robotic or monotone."
     }
 }
