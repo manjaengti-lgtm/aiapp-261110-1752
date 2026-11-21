@@ -106,12 +106,36 @@ private fun CustomApiLogin(vm: ChatViewModel) {
     val colors = MaterialTheme.colorScheme
     var base by rememberSaveable { mutableStateOf(vm.settings.ccCustomBase.removeSuffix("/anthropic")) }
     var key by rememberSaveable { mutableStateOf(vm.settings.ccCustomKey) }
+    var model by rememberSaveable { mutableStateOf("") }
+    var pickOpen by rememberSaveable { mutableStateOf(false) }
+    val saved = vm.ccSavedApiChoices()
     val fieldColors = OutlinedTextFieldDefaults.colors(focusedTextColor = colors.onSurface, unfocusedTextColor = colors.onSurface)
     Text(
         "Your own API is the brain, Claude Code is the tool. Enter only the URL and key — the models are listed for you. " +
             "Works with Anthropic-style and OpenAI-style APIs. Used only by Claude Code, not the chat tab.",
         style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant,
     )
+    if (saved.isNotEmpty()) {
+        androidx.compose.foundation.layout.Box {
+            OutlinedButton(onClick = { pickOpen = true }) { Text("Use a saved API from chat") }
+            androidx.compose.material3.DropdownMenu(expanded = pickOpen, onDismissRequest = { pickOpen = false }) {
+                saved.forEach { (name, url, keyModel) ->
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(name)
+                                Text(url, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
+                            }
+                        },
+                        onClick = {
+                            base = url; key = keyModel.first; model = keyModel.second; pickOpen = false
+                            vm.connectCcApi(url, keyModel.first, keyModel.second)
+                        },
+                    )
+                }
+            }
+        }
+    }
     OutlinedTextField(
         base, { base = it }, label = { Text("API URL") }, placeholder = { Text("https://api.deepseek.com") },
         singleLine = true, colors = fieldColors, modifier = Modifier.fillMaxWidth(),
@@ -120,9 +144,16 @@ private fun CustomApiLogin(vm: ChatViewModel) {
         key, { key = it }, label = { Text("API key") }, singleLine = true,
         visualTransformation = PasswordVisualTransformation(), colors = fieldColors, modifier = Modifier.fillMaxWidth(),
     )
+    // Only when the API won't list its models.
+    if (vm.ccNeedsModel || model.isNotBlank()) {
+        OutlinedTextField(
+            model, { model = it }, label = { Text("Model id") }, placeholder = { Text("the model you use in chat") },
+            singleLine = true, colors = fieldColors, modifier = Modifier.fillMaxWidth(),
+        )
+    }
     vm.ccConnectError?.let { Text(it, color = colors.error, style = MaterialTheme.typography.bodySmall) }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Button(onClick = { vm.connectCcApi(base, key) }, enabled = !vm.ccConnecting && base.isNotBlank() && key.isNotBlank()) {
+        Button(onClick = { vm.connectCcApi(base, key, model) }, enabled = !vm.ccConnecting && base.isNotBlank() && key.isNotBlank()) {
             Text(if (vm.ccConnecting) "Connecting…" else if (vm.ccApiConnected) "Reconnect" else "Connect")
         }
         if (vm.ccConnecting) { Spacer(Modifier.width(10.dp)); CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) }
@@ -130,7 +161,8 @@ private fun CustomApiLogin(vm: ChatViewModel) {
     if (vm.ccApiConnected) {
         Spacer(Modifier.height(2.dp))
         Text(
-            "Connected ✓ · ${vm.ccCustomModelCount} models" + if (vm.settings.ccCustomKind == "openai") " · via Arin's bridge" else "",
+            "Connected ✓ · ${vm.ccCustomModelCount} model${if (vm.ccCustomModelCount == 1) "" else "s"}" +
+                if (vm.settings.ccCustomKind == "openai") " · via Arin's bridge" else "",
             color = colors.primary, style = MaterialTheme.typography.bodySmall,
         )
         TextButton(onClick = { vm.disconnectCcApi() }) { Text("Disconnect") }

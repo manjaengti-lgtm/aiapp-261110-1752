@@ -174,52 +174,89 @@ object ClaudeCode {
      * From just a URL and key: find where the API speaks Anthropic's format (what Claude Code needs) and list
      * its models. Throws with a readable message if it can't.
      */
-    suspend fun connect(base: String, key: String): Connection {
+    /** The API wouldn't list its models (some keys aren't allowed to): ask the person for the model id. */
+    class NeedsModel(message: String) : Exception(message)
+
+    /** A short, readable piece of what the server said. */
+    private fun serverSays(body: String): String {
+        val msg = runCatching {
+            val o = org.json.JSONObject(body)
+            o.optJSONObject("error")?.optString("message")?.takeIf { it.isNotBlank() }
+                ?: o.optString("message").takeIf { it.isNotBlank() }
+                ?: o.optString("detail").takeIf { it.isNotBlank() }
+        }.getOrNull() ?: body
+        return msg.replace(Regex("\\s+"), " ").trim().take(160)
+    }
+
+    /**
+     * From a URL and key (and a model id, if the API won't list its models): find how Claude Code can talk to
+     * it and which models it has. Throws [NeedsModel] when the list is refused, else a readable error.
+     */
+    suspend fun connect(base: String, key: String, typedModel: String = ""): Connection {
+        val k = key.trim().replace(Regex("\\s"), "")   // pasted keys sometimes carry spaces or line breaks
         val clean = base.trim().trimEnd('/').let { if (it.startsWith("http")) it else "https://$it" }
-        val root = clean.removeSuffix("/chat/completions").removeSuffix("/v1/messages").removeSuffix("/v1")
+        val root = clean.removeSuffix("/chat/completions").removeSuffix("/v1/messages").removeSuffix("/models").removeSuffix("/v1")
             .removeSuffix("/anthropic").removeSuffix("/v1").removeSuffix("/openai")
         val anthropicCandidates = (if (clean.endsWith("/anthropic")) listOf(clean) else listOf("$root/anthropic", root, clean)).distinct()
         val openAiCandidates = listOf(clean, "$root/v1", root).distinct()
-        val bearer = mapOf("Authorization" to "Bearer $key")
-        val anth = mapOf("x-api-key" to key, "Authorization" to "Bearer $key", "anthropic-version" to "2023-06-01")
-        var rejected = 0
-        var lastError = ""
+        // Services differ in where they want the key; try the common ones.
+        val keyHeaders = listOf(
+            mapOf("Authorization" to "Bearer $k"),
+            mapOf("x-api-key" to k),
+            mapOf("api-key" to k),
+        )
+        val anth = mapOf("x-api-key" to k, "Authorization" to "Bearer $k", "anthropic-version" to "2023-06-01")
+        var rejectedSays = ""
+        var networkSays = ""
 
-        // 1. Models. A 401 on one address doesn't mean the key is bad (gateways answer 401 for unknown paths),
-        //    so try every address before giving up.
+        // 1. Models.
         var models = emptyList<String>()
         var openAiBase: String? = null
-        for (cand in openAiCandidates) {
-            val (code, body) = get("$cand/models", bearer)
-            if (code == 401 || code == 403) { rejected++; continue }
-            if (code == 0) lastError = body
-            if (code in 200..299) { models = ids(body); if (models.isNotEmpty()) { openAiBase = cand; break } }
+        loop@ for (cand in openAiCandidates) for (h in keyHeaders) {
+            val (code, body) = get("$cand/models", h)
+            when {
+                code == 0 -> networkSays = body
+                code == 401 || code == 403 -> rejectedSays = serverSays(body)
+                code in 200..299 -> { models = ids(body); if (models.isNotEmpty()) { openAiBase = cand; break@loop } }
+            }
         }
         if (models.isEmpty()) for (cand in anthropicCandidates) {
             val (code, body) = get("$cand/v1/models", anth)
-            if (code == 401 || code == 403) { rejected++; continue }
+            if (code == 401 || code == 403) rejectedSays = serverSays(body)
             if (code in 200..299) { models = ids(body); if (models.isNotEmpty()) break }
         }
-        if (models.isEmpty()) {
-            throw IllegalStateException(
-                when {
-                    rejected > 0 -> "The API key was rejected. Check the key and that it belongs to this URL."
-                    lastError.isNotBlank() -> "Couldn't reach the API: $lastError"
-                    else -> "Couldn't find a model list at this URL. Try the base URL ending in /v1."
-                },
+        val typed = typedModel.trim()
+        if (models.isEmpty() && typed.isEmpty()) {
+            if (networkSays.isNotBlank() && rejectedSays.isBlank()) throw IllegalStateException("Couldn't reach the API: $networkSays")
+            throw NeedsModel(
+                "This API didn't list its models" + (if (rejectedSays.isNotBlank()) " (it said: $rejectedSays)" else "") +
+                    ". Type the model id you use with it (the same one as in the chat tab) and tap Connect again.",
             )
         }
+        val probeModel = typed.ifEmpty { models.first() }
 
         // 2. Prefer an Anthropic-format endpoint (Claude Code's own format) when the API has one.
-        val probe = """{"model":"${models.first()}","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}"""
+        val probe = """{"model":"$probeModel","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}"""
         for (cand in anthropicCandidates) {
             val (code, body) = post("$cand/v1/messages", anth, probe)
             val anthropicShaped = body.replace(" ", "").let { it.contains("\"type\":\"message\"") || it.contains("\"type\":\"error\"") }
-            if ((code in 200..299 || code == 400 || code == 422 || code == 429) && anthropicShaped) return Connection("anthropic", cand, models)
+            if ((code in 200..299 || code == 400 || code == 422 || code == 429) && anthropicShaped) {
+                return Connection("anthropic", cand, models.ifEmpty { listOf(typed) })
+            }
         }
-        // 3. Otherwise an OpenAI-compatible API: Claude Code reaches it through Arin's bridge.
-        val oa = openAiBase ?: openAiCandidates.first()
-        return Connection("openai", oa, models)
+
+        // 3. OpenAI-compatible: check a real (1-token) chat works with this key and model, then use the bridge.
+        val chatProbe = """{"model":"$probeModel","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}"""
+        var chatSays = ""
+        for (cand in listOfNotNull(openAiBase) + openAiCandidates) {
+            val (code, body) = post("$cand/chat/completions", mapOf("Authorization" to "Bearer $k"), chatProbe)
+            if (code in 200..299 || code == 429) return Connection("openai", cand, models.ifEmpty { listOf(typed) })
+            if (code != 404 && code != 405 && code != 0) chatSays = "HTTP $code: ${serverSays(body)}"
+        }
+        throw IllegalStateException(
+            if (chatSays.isNotBlank()) "The API refused a test message — $chatSays"
+            else "Couldn't find a chat endpoint at this URL. Try the base URL ending in /v1.",
+        )
     }
 
     // ---------- the local bridge (Anthropic format -> OpenAI format) ----------

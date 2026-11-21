@@ -615,22 +615,32 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         settings.ccBackend = kind
     }
 
-    /** Connect with only a URL and key: finds how to talk to it and lists the models. */
-    fun connectCcApi(baseUrl: String, key: String) {
+    /** The API wouldn't list its models, so Settings asks for the model id. */
+    var ccNeedsModel by mutableStateOf(false)
+
+    /** Connect with a URL and key (plus a model id only if the API won't list its models). */
+    fun connectCcApi(baseUrl: String, key: String, typedModel: String = "") {
         if (ccConnecting || baseUrl.isBlank() || key.isBlank()) return
         ccConnecting = true
         ccConnectError = null
+        val cleanKey = key.trim().replace(Regex("\\s"), "")
         ArinApp.scope.launch {
             try {
-                val c = com.arin.claudecode.ClaudeCode.connect(baseUrl, key.trim())
+                val c = com.arin.claudecode.ClaudeCode.connect(baseUrl, cleanKey, typedModel)
                 settings.ccCustomKind = c.kind
                 settings.ccCustomBase = c.base
-                settings.ccCustomKey = key.trim()
+                settings.ccCustomKey = cleanKey
                 settings.ccCustomModels = c.models
                 ccCustomModels = c.models
-                if (ccCustomModelState !in c.models) { ccCustomModelState = c.models.first(); settings.ccCustomModel = c.models.first() }
+                val pick = typedModel.trim().takeIf { it in c.models } ?: ccCustomModelState.takeIf { it in c.models } ?: c.models.first()
+                ccCustomModelState = pick
+                settings.ccCustomModel = pick
                 ccCustomReady = true
+                ccNeedsModel = false
                 chooseCcBackend("custom")
+            } catch (e: com.arin.claudecode.ClaudeCode.NeedsModel) {
+                ccNeedsModel = true
+                ccConnectError = e.message
             } catch (e: Exception) {
                 ccConnectError = e.message ?: "Couldn't connect."
             } finally {
@@ -638,6 +648,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
+
+    /** The chat tab's saved APIs with their keys, to reuse one for Claude Code without retyping. */
+    fun ccSavedApiChoices(): List<Triple<String, String, Pair<String, String>>> =
+        savedApis.filter { !it.free }.mapNotNull { api ->
+            val key = settings.apiKey(api)
+            if (key.isBlank()) null else Triple(api.name, api.baseUrl, key to api.model)
+        }
 
     fun disconnectCcApi() {
         settings.ccCustomKey = ""
