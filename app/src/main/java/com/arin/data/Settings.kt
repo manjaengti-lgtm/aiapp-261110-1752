@@ -172,9 +172,10 @@ class Settings(context: Context) {
         get() = secret("voice_openai")
         set(value) = setSecret("voice_openai", value)
 
-    /** Let the person interrupt by talking while Arin is speaking (barge-in). */
+    /** Let the person interrupt by talking while Arin is speaking (barge-in). Off by default:
+     *  on many phones the mic hears Arin's own voice and would cut replies short. */
     var voiceBargeIn: Boolean
-        get() = prefs.getBoolean("voice_barge_in", true)
+        get() = prefs.getBoolean("voice_barge_in", false)
         set(value) = prefs.edit().putBoolean("voice_barge_in", value).apply()
 
     /** Other secrets kept with the API keys, such as the GitHub token Build mode uses. */

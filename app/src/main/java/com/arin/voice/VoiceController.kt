@@ -88,6 +88,27 @@ class VoiceController(
         focusRequest = null
     }
 
+    private var beepMuted = false
+
+    /** Silence the speech recognizer's start/stop beep while listening (it fires on every re-arm).
+     *  setStreamMute is ref-counted per app and auto-restores if the process dies, so music can't
+     *  get stuck muted. We hold audio focus anyway, so other apps' audio is already paused. */
+    @Suppress("DEPRECATION")
+    private fun muteBeep() {
+        if (beepMuted) return
+        runCatching { audioManager.setStreamMute(android.media.AudioManager.STREAM_MUSIC, true) }
+        runCatching { audioManager.setStreamMute(android.media.AudioManager.STREAM_SYSTEM, true) }
+        beepMuted = true
+    }
+
+    @Suppress("DEPRECATION")
+    private fun unmuteBeep() {
+        if (!beepMuted) return
+        runCatching { audioManager.setStreamMute(android.media.AudioManager.STREAM_MUSIC, false) }
+        runCatching { audioManager.setStreamMute(android.media.AudioManager.STREAM_SYSTEM, false) }
+        beepMuted = false
+    }
+
     /** While Arin speaks, listen for the person starting to talk so they can cut in without tapping. */
     private fun startGate() {
         if (!bargeIn || closed || gate != null) return
@@ -154,6 +175,7 @@ class VoiceController(
         // Go silent before listening so the mic never hears Arin's own voice.
         tts?.stop()
         neural?.stop()
+        muteBeep()
         queued.set(0)
         userPaused = false
         errorRetries = 0
@@ -189,6 +211,7 @@ class VoiceController(
             // Only when the wait is genuinely long, and only now and then — not a reflex every turn.
             if (!closed && !spokeThisReply && state == VoiceState.Thinking && Math.random() < FILLER_CHANCE) {
                 state = VoiceState.Speaking
+                unmuteBeep()
                 startGate()
                 queued.incrementAndGet()
                 neural?.speak(FILLERS.random())
@@ -218,6 +241,7 @@ class VoiceController(
         // The real reply has started: no need for the "thinking" filler (if it hasn't played yet).
         spokeThisReply = true
         cancelFiller()
+        unmuteBeep() // restore audio before Arin speaks (we mute it while listening)
         val n = neural
         if (naturalVoice && n != null) {
             state = VoiceState.Speaking
@@ -251,6 +275,7 @@ class VoiceController(
         closed = true
         cancelFiller()
         stopGate()
+        unmuteBeep()
         abandonAudioFocus()
         runCatching { recognizer?.destroy() }
         runCatching { tts?.stop(); tts?.shutdown() }
@@ -266,6 +291,7 @@ class VoiceController(
      */
     private fun deviceSpeak(text: String, counted: Boolean) {
         state = VoiceState.Speaking
+        unmuteBeep()
         startGate()
         if (!counted) queued.incrementAndGet()
         if (!ttsReady) { onUtteranceEnded(); return }

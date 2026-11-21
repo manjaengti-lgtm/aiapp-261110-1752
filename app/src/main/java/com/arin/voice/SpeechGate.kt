@@ -50,6 +50,8 @@ class SpeechGate(private val onSpeech: () -> Unit) {
 
         val buf = ShortArray(1600) // ~100ms at 16kHz
         var voiced = 0
+        var baseline = 0.0
+        var calib = 0
         try {
             rec.startRecording()
             while (running) {
@@ -58,7 +60,14 @@ class SpeechGate(private val onSpeech: () -> Unit) {
                 var sum = 0.0
                 for (i in 0 until n) { val s = buf[i].toDouble(); sum += s * s }
                 val rms = Math.sqrt(sum / n)
-                if (rms > THRESHOLD) {
+                // First frames: learn Arin's own echo level so the user's voice has to clearly beat it.
+                if (calib < CALIB_FRAMES) {
+                    baseline = maxOf(baseline, rms)
+                    calib++
+                    continue
+                }
+                val threshold = maxOf(THRESHOLD, baseline * MARGIN)
+                if (rms > threshold) {
                     voiced++
                     if (voiced >= FRAMES_TO_TRIGGER) {
                         running = false
@@ -80,9 +89,13 @@ class SpeechGate(private val onSpeech: () -> Unit) {
     }
 
     companion object {
-        // RMS of 16-bit PCM. High enough that residual speaker echo doesn't trip it.
+        // Absolute floor for the RMS of 16-bit PCM, so a silent room never triggers.
         private const val THRESHOLD = 2200.0
-        // ~300ms of sustained voice before we treat it as a real interruption.
-        private const val FRAMES_TO_TRIGGER = 3
+        // The person's voice must beat the learned echo level by this factor.
+        private const val MARGIN = 1.8
+        // ~500ms spent learning Arin's own echo before we start detecting.
+        private const val CALIB_FRAMES = 5
+        // ~400ms of sustained voice above the bar before we treat it as a real interruption.
+        private const val FRAMES_TO_TRIGGER = 4
     }
 }
