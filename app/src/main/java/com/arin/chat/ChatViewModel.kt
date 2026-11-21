@@ -617,9 +617,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var movieSubtitles by mutableStateOf(settings.movieSubtitles)
         private set
 
-    fun setMovieHfToken(v: String) { movieHfToken = v; settings.movieHfToken = v }
-    fun setMovieSpace(v: String) { movieSpace = v; settings.movieSpace = v }
-    fun setMovieSubtitles(v: Boolean) { movieSubtitles = v; settings.movieSubtitles = v }
+    fun updateMovieHfToken(v: String) { movieHfToken = v; settings.movieHfToken = v }
+    fun updateMovieSpace(v: String) { movieSpace = v; settings.movieSpace = v }
+    fun updateMovieSubtitles(v: Boolean) { movieSubtitles = v; settings.movieSubtitles = v }
 
     private fun movieLogLine(line: String) {
         ArinApp.scope.launch(kotlinx.coroutines.Dispatchers.Main) { movieLog += line; while (movieLog.size > 30) movieLog.removeAt(0) }

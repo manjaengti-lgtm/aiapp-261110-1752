@@ -201,7 +201,7 @@ private fun MotionSettings(vm: ChatViewModel, fieldColors: androidx.compose.mate
             if (open) {
                 OutlinedTextField(
                     value = vm.movieHfToken,
-                    onValueChange = { vm.setMovieHfToken(it) },
+                    onValueChange = { vm.updateMovieHfToken(it) },
                     label = { Text("Hugging Face token (free account)") },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
@@ -211,7 +211,7 @@ private fun MotionSettings(vm: ChatViewModel, fieldColors: androidx.compose.mate
                 TextButton(onClick = { uri.openUri("https://huggingface.co/settings/tokens") }) { Text("Get a free token (Read access is enough)") }
                 OutlinedTextField(
                     value = vm.movieSpace,
-                    onValueChange = { vm.setMovieSpace(it) },
+                    onValueChange = { vm.updateMovieSpace(it) },
                     label = { Text("Video Space") },
                     singleLine = true,
                     colors = fieldColors,
@@ -224,7 +224,7 @@ private fun MotionSettings(vm: ChatViewModel, fieldColors: androidx.compose.mate
                 )
                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Burn subtitles into the video", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = vm.movieSubtitles, onCheckedChange = { vm.setMovieSubtitles(it) })
+                    Switch(checked = vm.movieSubtitles, onCheckedChange = { vm.updateMovieSubtitles(it) })
                 }
             }
         }
