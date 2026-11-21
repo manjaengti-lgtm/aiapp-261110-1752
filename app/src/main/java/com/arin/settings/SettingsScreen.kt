@@ -213,15 +213,26 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
                         )
                     }
                     var vkey by remember { mutableStateOf(vm.settings.voiceKey) }
+                    var vkeySaved by remember { mutableStateOf(true) }
                     OutlinedTextField(
                         value = vkey,
-                        onValueChange = { vkey = it; vm.settings.voiceKey = it.trim() },
+                        onValueChange = { vkey = it; vkeySaved = false },
                         label = { Text("OpenAI key (for the OpenAI engine)") },
                         placeholder = { Text("sk-…") },
                         singleLine = true,
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Button(
+                            onClick = { vm.settings.voiceKey = vkey.trim(); vkeySaved = true },
+                            enabled = !vkeySaved,
+                        ) { Text(if (vkeySaved) "Saved ✓" else "Save key") }
+                        if (vkey.isNotBlank()) {
+                            Spacer(Modifier.width(8.dp))
+                            TextButton(onClick = { vkey = ""; vm.settings.voiceKey = ""; vkeySaved = true }) { Text("Clear") }
+                        }
+                    }
                     Text(
                         "Used only when the OpenAI engine is selected. Only the voice uses it — your chat still runs on the API you picked. Costs a small amount per reply. Leave blank to use the free voice.",
                         style = MaterialTheme.typography.bodySmall,
@@ -244,6 +255,12 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
                         }
                     }
                     TextButton(onClick = { vm.previewVoice() }) { Text("▶  Preview voice") }
+                    var barge by remember { mutableStateOf(vm.settings.voiceBargeIn) }
+                    Toggle(
+                        "Interrupt by talking",
+                        "Start speaking while Arin is talking and it stops to listen — no tapping. Works best with earphones or in a quiet place; turn it off if it cuts itself off.",
+                        barge,
+                    ) { barge = it; vm.settings.voiceBargeIn = it }
                 }
             }
 

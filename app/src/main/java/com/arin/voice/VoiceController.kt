@@ -59,7 +59,10 @@ class VoiceController(
     var voiceOpenAi = false
     /** OpenAI key for the ChatGPT voice engine (only used when [voiceOpenAi] is on). */
     var voiceKey = ""
+    /** Let the person interrupt by talking while Arin speaks. */
+    var bargeIn = true
     private var neural: NeuralVoice? = null
+    private var gate: SpeechGate? = null
     private val audioManager by lazy { context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager }
     private var focusRequest: android.media.AudioFocusRequest? = null
     private val fillerHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -83,6 +86,25 @@ class VoiceController(
     private fun abandonAudioFocus() {
         focusRequest?.let { fr -> runCatching { audioManager.abandonAudioFocusRequest(fr) } }
         focusRequest = null
+    }
+
+    /** While Arin speaks, listen for the person starting to talk so they can cut in without tapping. */
+    private fun startGate() {
+        if (!bargeIn || closed || gate != null) return
+        gate = SpeechGate(onSpeech = { if (!closed) onBargeIn() }).also { it.start() }
+    }
+
+    private fun stopGate() {
+        gate?.stop()
+        gate = null
+    }
+
+    private fun onBargeIn() {
+        if (closed || state != VoiceState.Speaking) return
+        // The person started talking: stop Arin at once and listen to them.
+        onInterrupt()
+        replyDone = true
+        listen()
     }
 
     fun start() {
@@ -128,6 +150,8 @@ class VoiceController(
     fun listen() {
         if (closed) return
         cancelFiller()
+        stopGate()
+        // Go silent before listening so the mic never hears Arin's own voice.
         tts?.stop()
         neural?.stop()
         queued.set(0)
@@ -165,6 +189,7 @@ class VoiceController(
             // Only when the wait is genuinely long, and only now and then — not a reflex every turn.
             if (!closed && !spokeThisReply && state == VoiceState.Thinking && Math.random() < FILLER_CHANCE) {
                 state = VoiceState.Speaking
+                startGate()
                 queued.incrementAndGet()
                 neural?.speak(FILLERS.random())
             }
@@ -196,6 +221,7 @@ class VoiceController(
         val n = neural
         if (naturalVoice && n != null) {
             state = VoiceState.Speaking
+            startGate()
             queued.incrementAndGet()
             n.speak(clean)
             return
@@ -224,6 +250,7 @@ class VoiceController(
     fun close() {
         closed = true
         cancelFiller()
+        stopGate()
         abandonAudioFocus()
         runCatching { recognizer?.destroy() }
         runCatching { tts?.stop(); tts?.shutdown() }
@@ -239,6 +266,7 @@ class VoiceController(
      */
     private fun deviceSpeak(text: String, counted: Boolean) {
         state = VoiceState.Speaking
+        startGate()
         if (!counted) queued.incrementAndGet()
         if (!ttsReady) { onUtteranceEnded(); return }
         tts?.setSpeechRate(rate)
@@ -248,7 +276,7 @@ class VoiceController(
     private fun onUtteranceEnded() {
         if (queued.decrementAndGet() <= 0) {
             queued.set(0)
-            if (replyDone) listen() else if (state == VoiceState.Speaking) state = VoiceState.Thinking
+            if (replyDone) listen() else if (state == VoiceState.Speaking) { state = VoiceState.Thinking; stopGate() }
         }
     }
 
