@@ -654,35 +654,61 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var ccNeedsModel by mutableStateOf(false)
 
     /** Connect with a URL and key (plus a model id only if the API won't list its models). */
-    fun connectCcApi(baseUrl: String, key: String, typedModel: String = "") {
+    fun connectCcApi(baseUrl: String, key: String, typedModel: String = "", preferModel: String = "") {
         if (ccConnecting || baseUrl.isBlank() || key.isBlank()) return
         ccConnecting = true
         ccConnectError = null
         val cleanKey = key.trim().replace(Regex("\\s"), "")
         ArinApp.scope.launch {
             try {
-                val c = com.arin.claudecode.ClaudeCode.connect(baseUrl, cleanKey, typedModel)
+                var usedKey = cleanKey
+                var note: String? = null
+                val c = try {
+                    com.arin.claudecode.ClaudeCode.connect(baseUrl, cleanKey, typedModel)
+                } catch (e: com.arin.claudecode.ClaudeCode.KeyRejected) {
+                    // The typed key was refused. If the chat tab has a working key for the same site, use that one.
+                    val host = ccHost(baseUrl)
+                    val others = ccSavedApiChoices()
+                        .filter { ccHost(it.second) == host && it.third.first.replace(Regex("\\s"), "") != cleanKey }
+                    var found: com.arin.claudecode.ClaudeCode.Connection? = null
+                    for ((name, url, km) in others) {
+                        val k2 = km.first.replace(Regex("\\s"), "")
+                        found = runCatching { com.arin.claudecode.ClaudeCode.connect(url, k2, typedModel) }.getOrNull()
+                        if (found != null) { usedKey = k2; note = "The key you typed was refused, so Arin used your saved chat API “$name”."; break }
+                    }
+                    found ?: throw IllegalStateException(
+                        (e.message ?: "Your API rejected this key.") +
+                            if (others.isEmpty()) " Paste the same key your chat tab uses for this API." else "",
+                    )
+                }
                 settings.ccCustomKind = c.kind
                 settings.ccCustomBase = c.base
-                settings.ccCustomKey = cleanKey
+                settings.ccCustomKey = usedKey
                 settings.ccCustomModels = c.models
                 ccCustomModels = c.models
-                val pick = typedModel.trim().takeIf { it in c.models } ?: ccCustomModelState.takeIf { it in c.models } ?: c.models.first()
+                val pick = typedModel.trim().takeIf { it in c.models } ?: preferModel.trim().takeIf { it in c.models }
+                    ?: ccCustomModelState.takeIf { it in c.models } ?: c.models.first()
                 ccCustomModelState = pick
                 settings.ccCustomModel = pick
                 ccCustomReady = true
                 ccNeedsModel = false
+                ccConnectError = null
+                note?.let { notice = it }
                 chooseCcBackend("custom")
             } catch (e: com.arin.claudecode.ClaudeCode.NeedsModel) {
                 ccNeedsModel = true
                 ccConnectError = e.message
             } catch (e: Exception) {
+                ccNeedsModel = false
                 ccConnectError = e.message ?: "Couldn't connect."
             } finally {
                 ccConnecting = false
             }
         }
     }
+
+    private fun ccHost(url: String): String =
+        url.trim().removePrefix("https://").removePrefix("http://").substringBefore('/').lowercase()
 
     /** The chat tab's saved APIs with their keys, to reuse one for Claude Code without retyping. */
     fun ccSavedApiChoices(): List<Triple<String, String, Pair<String, String>>> =

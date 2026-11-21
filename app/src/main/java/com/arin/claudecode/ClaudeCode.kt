@@ -190,6 +190,9 @@ object ClaudeCode {
     /** The API wouldn't list its models (some keys aren't allowed to): ask the person for the model id. */
     class NeedsModel(message: String) : Exception(message)
 
+    /** The API said the key is wrong (not just "can't list models"). */
+    class KeyRejected(message: String) : Exception(message)
+
     /** A short, readable piece of what the server said. */
     private fun serverSays(body: String): String {
         val msg = runCatching {
@@ -241,6 +244,10 @@ object ClaudeCode {
         val typed = typedModel.trim()
         if (models.isEmpty() && typed.isEmpty()) {
             if (networkSays.isNotBlank() && rejectedSays.isBlank()) throw IllegalStateException("Couldn't reach the API: $networkSays")
+            // The server says the key itself is bad: no model id will help, so say that plainly.
+            if (rejectedSays.isNotBlank() && Regex("key|token|auth|credential|revoked|expired|unauthori", RegexOption.IGNORE_CASE).containsMatchIn(rejectedSays)) {
+                throw KeyRejected("Your API rejected this key: $rejectedSays")
+            }
             throw NeedsModel(
                 "This API didn't list its models" + (if (rejectedSays.isNotBlank()) " (it said: $rejectedSays)" else "") +
                     ". Type the model id you use with it (the same one as in the chat tab) and tap Connect again.",
@@ -264,6 +271,7 @@ object ClaudeCode {
         for (cand in listOfNotNull(openAiBase) + openAiCandidates) {
             val (code, body) = post("$cand/chat/completions", mapOf("Authorization" to "Bearer $k"), chatProbe)
             if (code in 200..299 || code == 429) return Connection("openai", cand, models.ifEmpty { listOf(typed) })
+            if (code == 401 || code == 403) throw KeyRejected("Your API rejected this key: ${serverSays(body)}")
             if (code != 404 && code != 405 && code != 0) chatSays = "HTTP $code: ${serverSays(body)}"
         }
         throw IllegalStateException(

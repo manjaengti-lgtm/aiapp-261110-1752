@@ -133,8 +133,8 @@ private fun CustomApiLogin(vm: ChatViewModel) {
                             }
                         },
                         onClick = {
-                            base = url; key = keyModel.first; model = keyModel.second; pickOpen = false
-                            vm.connectCcApi(url, keyModel.first, keyModel.second)
+                            base = url; key = keyModel.first; model = ""; pickOpen = false
+                            vm.connectCcApi(url, keyModel.first, preferModel = keyModel.second)
                         },
                     )
                 }
@@ -150,7 +150,7 @@ private fun CustomApiLogin(vm: ChatViewModel) {
         visualTransformation = PasswordVisualTransformation(), colors = fieldColors, modifier = Modifier.fillMaxWidth(),
     )
     // Only when the API won't list its models.
-    if (vm.ccNeedsModel || model.isNotBlank()) {
+    if (vm.ccNeedsModel) {
         OutlinedTextField(
             model, { model = it }, label = { Text("Model id") }, placeholder = { Text("the model you use in chat") },
             singleLine = true, colors = fieldColors, modifier = Modifier.fillMaxWidth(),
