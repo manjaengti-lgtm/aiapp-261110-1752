@@ -601,7 +601,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Movie Maker (film studio): your model directs; free tools render; ffmpeg cuts ----
 
+    enum class MoviePhase { Idle, Planning, Filming }
+    data class MovieChatLine(val fromUser: Boolean, val text: String)
+
     var movieBusy by mutableStateOf(false)
+    var moviePhase by mutableStateOf(MoviePhase.Idle)
+    var movieStep by mutableStateOf("")            // e.g. "Writing the film — part 3 of 8"
+    var movieFraction by mutableStateOf<Float?>(null) // real progress 0..1, or null while unknown
+    var movieActivity by mutableStateOf("")        // live detail: "Thinking…", "Writing shots… 1.2k characters"
+    var movieError by mutableStateOf<String?>(null)
     var movieProgress by mutableStateOf("")
     var movieReady by mutableStateOf(false)   // a finished movie.mp4 is available to play
     var moviePartial by mutableStateOf(false) // finished, but some shots are missing (Resume retries them)
@@ -609,6 +617,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var movieTitle by mutableStateOf("")
     var movieSummary by mutableStateOf<com.arin.movie.MovieMaker.Summary?>(null)
     val movieLog = mutableStateListOf<String>()
+    val movieChat = mutableStateListOf<MovieChatLine>()
+    var movieSteering by mutableStateOf(false)
+    private val movieNotes = java.util.concurrent.CopyOnWriteArrayList<String>()
+
+    /** The model directing the film: the one selected in chat. */
+    val movieDirectorLabel: String get() = model
 
     var movieHfToken by mutableStateOf(settings.movieHfToken)
         private set
@@ -625,20 +639,61 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         ArinApp.scope.launch(kotlinx.coroutines.Dispatchers.Main) { movieLog += line; while (movieLog.size > 30) movieLog.removeAt(0) }
     }
 
+    private fun movieStatus(step: String, fraction: Float?) {
+        movieStep = step
+        movieFraction = fraction
+        com.arin.movie.MovieService.update(getApplication<Application>(), step, fraction)
+    }
+
+    private fun movieFail(msg: String) {
+        movieError = msg
+        notice = msg
+    }
+
+    /** One call to the person's own model (the director). Shows live activity while it streams. */
+    private suspend fun askDirector(system: String, user: String): String {
+        val p = provider
+        val key = settings.key(p)
+        if (p == Provider.Free) syncFreePool()
+        val endpoint = if (p == Provider.Custom) com.arin.llm.CustomApi.current() else null
+        // Each part is short, but leave room for thinking models; free pools keep their own limits.
+        val maxTokens = if (p == Provider.Free) null else 16_000
+        val sb = StringBuilder()
+        var thinking = 0
+        movieActivity = "Waiting for ${model}…"
+        com.arin.llm.Llm.stream(p, key, model, system, listOf(com.arin.llm.Turn(true, user)), maxTokens = maxTokens, endpoint = endpoint)
+            .collect {
+                when (it) {
+                    is com.arin.llm.Delta.Thinking -> { thinking += it.text.length; movieActivity = "Thinking… ${thinking / 100 / 10.0}k" }
+                    is com.arin.llm.Delta.Text -> { sb.append(it.text); movieActivity = "Writing… ${sb.length / 100 / 10.0}k characters" }
+                    else -> {}
+                }
+            }
+        movieActivity = ""
+        return sb.toString()
+    }
+
     /** Linux + ffmpeg + python, installed once. */
     private suspend fun movieToolsReady(app: Application): Boolean {
         if (!com.arin.terminal.Linux.installed(app)) {
-            movieLogLine("Setting up Linux first…")
+            movieStatus("Setting up Linux (one-time)", null)
             com.arin.terminal.Linux.install(app) { movieLogLine(it) }
         }
-        if (!com.arin.movie.MovieMaker.toolsReady(app) && !com.arin.movie.MovieMaker.installTools(app) { movieLogLine(it) }) {
-            notice = "Couldn't install ffmpeg."
-            return false
+        if (!com.arin.movie.MovieMaker.toolsReady(app)) {
+            movieStatus("Installing ffmpeg (one-time)", null)
+            if (!com.arin.movie.MovieMaker.installTools(app) { movieLogLine(it) }) {
+                movieFail("Couldn't install ffmpeg. Check your connection and try again.")
+                return false
+            }
         }
         return true
     }
 
-    /** Ask the person's own model for a production bible, then render it. */
+    /**
+     * Plan the film in parts (cast first, then the script part by part, so long scripts never overflow one
+     * reply and the progress is real), then render it. Runs on the app scope with a foreground service, so it
+     * keeps going with Arin in the background or the screen off.
+     */
     fun makeMovie(script: String) {
         if (movieBusy || script.isBlank()) return
         val app = getApplication<Application>()
@@ -646,34 +701,54 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         movieReady = false
         moviePartial = false
         movieSummary = null
+        movieError = null
         movieProgress = ""
         movieLog.clear()
-        // The active model is the director, exactly like a normal reply.
-        val p = provider
-        val m = model
-        val key = settings.key(p)
-        if (p == Provider.Free) syncFreePool()
-        val endpoint = if (p == Provider.Custom) com.arin.llm.CustomApi.current() else null
+        movieChat.clear()
+        movieNotes.clear()
+        moviePhase = MoviePhase.Planning
+        com.arin.movie.MovieService.start(app, "Getting ready…")
         ArinApp.scope.launch {
+            var finished = false
             try {
                 if (!movieToolsReady(app)) return@launch
-                movieLogLine("Understanding the story…")
-                movieLogLine("Writing the screenplay, characters and shot list…")
-                val sb = StringBuilder()
-                com.arin.llm.Llm.stream(p, key, m, com.arin.movie.MovieMaker.DIRECTOR, listOf(com.arin.llm.Turn(true, script)), endpoint = endpoint)
-                    .collect { if (it is com.arin.llm.Delta.Text) sb.append(it.text) }
-                val bible = com.arin.movie.MovieMaker.parseBible(sb.toString())
-                if (bible == null) { notice = "The model didn't return a usable shot list — try again or use a clearer script."; return@launch }
-                val capped = bible.copy(shots = bible.shots.take(120))
-                com.arin.movie.MovieMaker.saveNewProject(app, capped)
-                movieTitle = capped.title
+                val parts = com.arin.movie.MovieMaker.splitScript(script)
+                val steps = parts.size + 1
+                movieStatus("Planning: cast and look (step 1 of $steps)", 0f)
+                val castRaw = askDirector(com.arin.movie.MovieMaker.CAST, script)
+                val cast = com.arin.movie.MovieMaker.parseCast(castRaw)
+                    ?: com.arin.movie.MovieMaker.parseCast(askDirector(com.arin.movie.MovieMaker.CAST, script))
+                if (cast == null) { movieFail("${model} didn't return a usable cast. Try again, or pick another model in chat."); return@launch }
+                movieTitle = cast.title
+                movieChat += MovieChatLine(false, "“${cast.title}” — ${cast.characters.joinToString { it.name }.ifBlank { "narrated" }}. " +
+                    "Planning ${parts.size} part${if (parts.size == 1) "" else "s"}. Type here any time to steer.")
+                val castJson = com.arin.movie.MovieMaker.castJson(cast)
+                val shots = mutableListOf<com.arin.movie.MovieMaker.Shot>()
+                for ((k, part) in parts.withIndex()) {
+                    movieStatus("Planning: writing shots — part ${k + 1} of ${parts.size}", (k + 1f) / steps)
+                    val previous = shots.takeLast(2).joinToString(" / ") { it.action }
+                    var got = com.arin.movie.MovieMaker.parseShots(askDirector(com.arin.movie.MovieMaker.shotsPrompt(castJson, previous, movieNotes.toList()), part))
+                    if (got.isEmpty()) got = com.arin.movie.MovieMaker.parseShots(askDirector(com.arin.movie.MovieMaker.shotsPrompt(castJson, previous, movieNotes.toList()), part))
+                    if (got.isEmpty()) { movieFail("${model} didn't return shots for part ${k + 1}. Tap Make movie to try again."); return@launch }
+                    shots += got
+                    movieLogLine("Part ${k + 1}: ${got.size} shots (${shots.size} so far)")
+                }
+                val bible = cast.copy(shots = shots.take(200))
+                com.arin.movie.MovieMaker.saveNewProject(app, bible)
                 movieHasProject = true
-                movieLogLine("“${capped.title}”: ${capped.characters.size} characters, ${capped.shots.size} shots.")
-                renderAndWatch(app, motion = false)
+                movieLogLine("Plan ready: ${bible.characters.size} characters, ${bible.shots.size} shots.")
+                finished = renderAndWatch(app, motion = false)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                notice = "Movie error: ${e.message}"
+                movieFail("Movie error: ${e.message}")
             } finally {
                 movieBusy = false
+                moviePhase = MoviePhase.Idle
+                movieActivity = ""
+                com.arin.movie.MovieService.stop(app)
+                if (finished) com.arin.movie.MovieService.notifyDone(app, "Your movie is ready 🎬", movieTitle)
+                else if (movieError != null) com.arin.movie.MovieService.notifyDone(app, "Movie stopped", movieError.orEmpty())
             }
         }
     }
@@ -683,7 +758,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Re-render only the camera-move shots with real motion, using the free GPU quota left today. */
     fun addMotionToMovie() {
-        if (movieHfToken.isBlank()) { notice = "Add your free Hugging Face token below first."; return }
+        if (movieHfToken.isBlank()) { movieFail("Add your free Hugging Face token under Real motion first."); return }
         runMovieJob(motion = true)
     }
 
@@ -696,51 +771,116 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (movieBusy) return
         val app = getApplication<Application>()
         movieBusy = true
+        movieError = null
         movieLog.clear()
+        com.arin.movie.MovieService.start(app, "Getting ready…")
         ArinApp.scope.launch {
+            var finished = false
             try {
-                if (movieToolsReady(app)) renderAndWatch(app, motion)
+                if (movieToolsReady(app)) finished = renderAndWatch(app, motion)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                notice = "Movie error: ${e.message}"
+                movieFail("Movie error: ${e.message}")
             } finally {
                 movieBusy = false
+                moviePhase = MoviePhase.Idle
+                com.arin.movie.MovieService.stop(app)
+                if (finished) com.arin.movie.MovieService.notifyDone(app, "Your movie is ready 🎬", movieTitle)
             }
         }
     }
 
-    private suspend fun renderAndWatch(app: Application, motion: Boolean) {
+    /** Start the renderer and follow it. True when a movie came out. */
+    private suspend fun renderAndWatch(app: Application, motion: Boolean): Boolean {
         movieReady = false
         moviePartial = false
+        moviePhase = MoviePhase.Filming
+        movieStatus("Filming: starting", 0f)
         if (!com.arin.movie.MovieMaker.startRender(app, movieHfToken, movieSpace, movieSubtitles, motion)) {
-            notice = "Couldn't start rendering."
-            return
+            movieFail("Couldn't start rendering.")
+            return false
         }
-        // Keep Arin alive in the background while the film renders.
-        ReplyService.start(app)
-        try {
-            watchMovie(app)
-        } finally {
-            ReplyService.stop(app)
-        }
+        return watchMovie(app)
+    }
+
+    /** "Shot 12/40: voice" -> 12/40 of the way; the final cut is the last 5%. */
+    private fun renderFraction(lines: List<String>): Float? {
+        val last = lines.lastOrNull().orEmpty()
+        if (last.startsWith("Final cut")) return 0.97f
+        val m = lines.reversed().firstNotNullOfOrNull { Regex("""Shot (\d+)/(\d+)""").find(it) } ?: return null
+        val (i, n) = m.destructured
+        return ((i.toFloat() - 1f) / n.toFloat() * 0.95f).coerceIn(0f, 0.95f)
     }
 
     /** Poll the renderer until it finishes. Free GPU queues can be slow, so allow hours, not minutes. */
-    private suspend fun watchMovie(app: Application) {
-        val deadline = System.currentTimeMillis() + 4 * 3600_000L
+    private suspend fun watchMovie(app: Application): Boolean {
+        val deadline = System.currentTimeMillis() + 5 * 3600_000L
         kotlinx.coroutines.delay(2000)
         while (System.currentTimeMillis() < deadline) {
             val (state, lines) = com.arin.movie.MovieMaker.status(app)
-            movieProgress = lines.joinToString("\n")
+            movieProgress = lines.takeLast(2).joinToString("\n")
+            val shot = lines.lastOrNull { it.startsWith("Shot ") }?.substringBefore(":")
+            movieStatus("Filming: " + (shot?.lowercase() ?: lines.lastOrNull().orEmpty()), renderFraction(lines))
             when (state) {
                 com.arin.movie.MovieMaker.State.Done, com.arin.movie.MovieMaker.State.Partial -> {
                     movieReady = true
                     moviePartial = state == com.arin.movie.MovieMaker.State.Partial
                     movieSummary = com.arin.movie.MovieMaker.summary(app)
-                    return
+                    movieStatus("Finished", 1f)
+                    return true
                 }
-                com.arin.movie.MovieMaker.State.Failed -> { notice = "Rendering failed. Check your connection and tap Resume."; return }
-                com.arin.movie.MovieMaker.State.Idle -> return   // stopped; Resume continues it
-                com.arin.movie.MovieMaker.State.Running -> kotlinx.coroutines.delay(4000)
+                com.arin.movie.MovieMaker.State.Failed -> { movieFail("Rendering failed. Check your connection and tap Resume."); return false }
+                com.arin.movie.MovieMaker.State.Idle -> return false   // stopped; Resume continues it
+                com.arin.movie.MovieMaker.State.Running -> kotlinx.coroutines.delay(3000)
+            }
+        }
+        return false
+    }
+
+    /**
+     * The director chat. While planning, the note shapes the parts not yet written. While filming (or after),
+     * the model rewrites the shots that haven't been filmed yet, and the renderer picks them up.
+     */
+    fun sendMovieNote(text: String) {
+        val note = text.trim()
+        if (note.isEmpty() || movieSteering) return
+        val app = getApplication<Application>()
+        movieChat += MovieChatLine(true, note)
+        if (moviePhase == MoviePhase.Planning) {
+            movieNotes += note
+            movieChat += MovieChatLine(false, "Got it — I'll follow that for the rest of the plan.")
+            return
+        }
+        movieSteering = true
+        ArinApp.scope.launch {
+            try {
+                val bible = com.arin.movie.MovieMaker.loadProject(app)
+                if (bible == null) { movieChat += MovieChatLine(false, "Make a movie first, then you can steer it here."); return@launch }
+                val running = moviePhase == MoviePhase.Filming
+                val locked = (if (running) com.arin.movie.MovieMaker.lockedShots(app) else 0).coerceAtMost(bible.shots.size)
+                val remaining = bible.shots.drop(locked)
+                if (remaining.isEmpty()) {
+                    movieChat += MovieChatLine(false, "Every shot is already filmed. Describe the change and tap Make movie for a new cut.")
+                    return@launch
+                }
+                val raw = askDirector(
+                    com.arin.movie.MovieMaker.revisePrompt(com.arin.movie.MovieMaker.castJson(bible), note),
+                    com.arin.movie.MovieMaker.shotsJson(remaining),
+                )
+                val revision = com.arin.movie.MovieMaker.parseRevision(raw)
+                if (revision == null) { movieChat += MovieChatLine(false, "I couldn't apply that — try saying it another way."); return@launch }
+                // Re-check what got filmed while the model was thinking, so nothing filmed is replaced.
+                val nowLocked = (if (running) com.arin.movie.MovieMaker.lockedShots(app) else 0).coerceAtMost(bible.shots.size)
+                val keep = bible.shots.take(maxOf(locked, nowLocked))
+                val newShots = revision.second.drop(maxOf(0, nowLocked - locked))
+                com.arin.movie.MovieMaker.writeProject(app, bible.copy(shots = (keep + newShots).take(200)))
+                movieChat += MovieChatLine(false, revision.first + if (running) "" else " Tap Resume to film it.")
+            } catch (e: Exception) {
+                movieChat += MovieChatLine(false, "Couldn't reach ${model}: ${e.message}")
+            } finally {
+                movieActivity = ""
+                movieSteering = false
             }
         }
     }
@@ -751,16 +891,23 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         ArinApp.scope.launch {
             movieHasProject = com.arin.movie.MovieMaker.hasProject(app)
             movieTitle = com.arin.movie.MovieMaker.projectTitle(app).orEmpty()
-            if (!movieHasProject || !com.arin.terminal.Linux.installed(app)) return@launch
+            if (!movieHasProject || !com.arin.terminal.Linux.installed(app) || movieBusy) return@launch
             val (state, lines) = com.arin.movie.MovieMaker.status(app)
-            movieProgress = lines.joinToString("\n")
+            movieProgress = lines.takeLast(2).joinToString("\n")
             movieReady = com.arin.movie.MovieMaker.hasMovie(app) &&
                 state in setOf(com.arin.movie.MovieMaker.State.Done, com.arin.movie.MovieMaker.State.Partial)
             moviePartial = state == com.arin.movie.MovieMaker.State.Partial
             movieSummary = if (movieReady) com.arin.movie.MovieMaker.summary(app) else null
-            if (state == com.arin.movie.MovieMaker.State.Running && !movieBusy) {
+            if (state == com.arin.movie.MovieMaker.State.Running) {
+                // A render is still going (e.g. Arin was reopened): follow it again in the background.
                 movieBusy = true
-                try { watchMovie(app) } finally { movieBusy = false }
+                moviePhase = MoviePhase.Filming
+                com.arin.movie.MovieService.start(app, "Filming…")
+                try { watchMovie(app) } finally {
+                    movieBusy = false
+                    moviePhase = MoviePhase.Idle
+                    com.arin.movie.MovieService.stop(app)
+                }
             }
         }
     }

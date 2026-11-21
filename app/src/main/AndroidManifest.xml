@@ -79,6 +79,12 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- Movie Maker: keeps a film planning/rendering with Arin in the background or the screen off. -->
+        <service
+            android:name=".movie.MovieService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <!-- Build mode: builds apps on GitHub, keeps going when Arin is closed. -->
         <service
             android:name=".builder.BuildService"

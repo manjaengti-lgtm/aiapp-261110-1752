@@ -14,6 +14,7 @@ Reads project.json (the production bible your model wrote) and renders it shot b
 Everything is resumable: finished shots are kept in state.json and never redone unless asked.
 Nothing here ever calls a paid endpoint.
 """
+import hashlib
 import json
 import os
 import random
@@ -133,14 +134,21 @@ def image_ok(path):
 
 # ---------- production bible helpers ----------
 
-PROJECT = load("project.json", None)
+PROJECT, CHARS, SHOTS, STYLE = None, {}, [], ""
+
+
+def reload_project():
+    """Re-read the plan. The person can steer the film while it renders; changes apply to unfilmed shots."""
+    global PROJECT, CHARS, SHOTS, STYLE
+    p = load("project.json", None)
+    if p and p.get("shots"):
+        PROJECT, CHARS, SHOTS, STYLE = p, {c["id"]: c for c in p.get("characters", [])}, p["shots"], p.get("style", "")
+
+
+reload_project()
 if not PROJECT:
     say("FAILED")
     sys.exit(1)
-
-CHARS = {c["id"]: c for c in PROJECT.get("characters", [])}
-SHOTS = PROJECT.get("shots", [])
-STYLE = PROJECT.get("style", "")
 
 
 def shot_prompt(s):
@@ -340,8 +348,27 @@ def main():
     if MODE == "motion" and not (HF_TOKEN and SPACE):
         say("Add a Hugging Face token first to get real motion.")
 
-    for i, s in enumerate(SHOTS):
+    i = -1
+    while True:
+        i += 1
+        reload_project()
+        n = len(SHOTS)
+        if i >= n:
+            break
+        s = SHOTS[i]
         key = str(i)
+        # If the plan for this shot changed (steering), throw away its old picture/voice/clip.
+        fp = hashlib.sha1(json.dumps(s, sort_keys=True).encode()).hexdigest()[:16]
+        fp_file = f"s{i}.fp"
+        old_fp = open(fp_file).read().strip() if os.path.exists(fp_file) else None
+        if old_fp != fp:
+            if old_fp is not None:
+                for ext in ("jpg", "mp3", "mp4", "raw.mp4"):
+                    if os.path.exists(f"s{i}.{ext}"):
+                        os.remove(f"s{i}.{ext}")
+                state.pop(key, None)
+            with open(fp_file, "w") as f:
+                f.write(fp)
         rec = state.get(key, {})
         done = rec.get("status") in ("motion", "still") and (probe(f"s{i}.mp4") or (0, 0))[1]
         if done and not (MODE == "motion" and rec["status"] == "still" and gpu_available()):
@@ -383,6 +410,9 @@ def main():
             state[key] = {"status": "failed", "reason": "clip assembly failed"}
         save("state.json", state)
 
+    reload_project()
+    n = len(SHOTS)
+    state = {k: v for k, v in state.items() if k.isdigit() and int(k) < n}
     # ---- assemble the film ----
     say("Final cut: assembling")
     clips = [i for i in range(n) if state.get(str(i), {}).get("status") in ("motion", "still")]

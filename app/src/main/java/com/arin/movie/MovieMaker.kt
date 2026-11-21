@@ -14,7 +14,7 @@ import java.io.File
  *
  *  - Your own model (e.g. DeepSeek) is the only creative brain: it writes a production bible —
  *    characters with fixed looks and voices, then a shot list with shot size, camera move, action and the
- *    spoken line. See [DIRECTOR].
+ *    spoken line. See [CAST] and [shotsPrompt].
  *  - assets/movie-render.py renders it inside Arin's Linux: photoreal stills + voices from free keyless
  *    Pollinations, optional real motion from a Hugging Face ZeroGPU Space on the person's own free quota,
  *    quality checks, scene-level resume, subtitles, and the ffmpeg final cut.
@@ -49,81 +49,154 @@ object MovieMaker {
     private const val DIR = "/root/movie"
     private fun dir(context: Context) = File(Linux.rootfs(context), "root/movie")
 
-    /** The production-planning instructions given to the person's own model. */
-    val DIRECTOR = """
-        You are the director, screenwriter and cinematographer of a short live-action film made with AI tools.
-        Turn the user's idea or script into a production bible. If they gave a script, keep its story and dialogue.
+    private val VOICE_LIST = VOICES.joinToString("|")
 
-        Reply with ONLY one JSON object, no prose, no code fences:
-        {
-          "title": "...",
-          "style": "one line: era, colour grade, lens look, mood (always photorealistic live action)",
-          "narrator_voice": one of ${VOICES.joinToString("|")},
-          "characters": [
-            {"id": "c1", "name": "...", "voice": one of ${VOICES.joinToString("|")},
-             "look": "fixed visual description reused in every shot: adult age, ethnicity, face, hair, build, exact wardrobe, accessories"}
-          ],
-          "shots": [
+    /** Step 1 of planning: title, look and the cast with fixed looks and voices. Short reply. */
+    val CAST = """
+        You are the director of a short live-action film made with AI tools. Read the user's idea or full script
+        and set up the production. Reply with ONLY one JSON object, no prose, no code fences:
+        {"title": "...", "style": "one line: era, colour grade, lens look, mood (always photorealistic live action)",
+         "narrator_voice": one of $VOICE_LIST,
+         "characters": [{"id": "c1", "name": "...", "voice": one of $VOICE_LIST,
+           "look": "fixed visual description reused in every shot: adult age, ethnicity, face, hair, build, exact wardrobe"}]}
+        Every character is a realistic adult human actor, never cartoon or anime. No real people.
+    """.trimIndent()
+
+    /** Step 2 of planning, once per part of the script: the shots for that part only. */
+    fun shotsPrompt(castJson: String, previous: String, notes: List<String>): String = buildString {
+        append(
+            """
+            You are the director and cinematographer of a short live-action film made with AI tools.
+            The production (title, look, cast) is fixed:
+            $castJson
+
+            You will get ONE part of the script. Turn only that part into shots. Keep its story and dialogue.
+            Reply with ONLY a JSON array, no prose, no code fences. Each element:
             {"characters": ["c1"], "shot": "wide establishing | medium | close-up | over-the-shoulder | POV ...",
              "camera": "slow push in | pull out | pan left | pan right | tracking | crane up | handheld | static",
-             "action": "what physically happens in the frame, who faces whom, where things are",
-             "location": "place and time of day", "speaker": "c1 or narrator",
-             "line": "the dialogue or voiceover spoken during this shot (one or two sentences, may be empty)",
-             "seconds": 4}
-          ]
+             "action": "what physically happens in frame, who faces whom, where things are",
+             "location": "place and time of day", "speaker": "character id or narrator",
+             "line": "dialogue or voiceover spoken during this shot (may be empty)", "seconds": 3-6}
+            Use many short shots. Keep screen direction and geography consistent with the previous shots.
+            Use only the character ids above. Photorealistic live action only. No sexual content.
+            """.trimIndent(),
+        )
+        if (previous.isNotBlank()) append("\n\nThe previous shots ended with: ").append(previous)
+        if (notes.isNotEmpty()) {
+            append("\n\nThe user's directions so far (follow them):\n")
+            notes.forEach { append("- ").append(it).append('\n') }
         }
+    }
 
-        Rules: every character is a realistic adult human actor — never cartoon, anime or stylised.
-        Keep each character's look text identical across the film; record deliberate changes in the action.
-        Use many short shots (3-6 s each) rather than few long ones; keep screen direction and geography consistent
-        between consecutive shots. Use as many shots as the story needs (a longer script makes a longer film).
-        No real people, no sexual content, nothing a free public video service would refuse.
+    /** Steering while filming: revise the shots that haven't been filmed yet. */
+    fun revisePrompt(castJson: String, note: String): String = """
+        You are the director of a short live-action film made with AI tools. The production is:
+        $castJson
+        The user is steering the film while it is being made. Their direction: "$note"
+        You will get the shots that have NOT been filmed yet, as a JSON array. Rewrite them to follow the direction,
+        keeping the story coherent. You may add, drop or change shots. Use the same JSON fields.
+        Reply with ONLY one JSON object: {"reply": "one short sentence telling the user what you changed",
+        "shots": [ ...the revised shots... ]}
     """.trimIndent()
+
+    /** Split a script into parts small enough for one model reply each, on scene/paragraph boundaries. */
+    fun splitScript(script: String, maxChars: Int = 2500): List<String> {
+        val paras = script.replace("\r", "").split(Regex("\n\\s*\n")).map { it.trim() }.filter { it.isNotEmpty() }
+        val parts = mutableListOf<String>()
+        val cur = StringBuilder()
+        fun flush() { if (cur.isNotBlank()) parts += cur.toString().trim(); cur.clear() }
+        for (p in paras) {
+            val sceneHeading = Regex("^(INT\\.|EXT\\.|INT/EXT|SCENE\\b|ACT\\b)", RegexOption.IGNORE_CASE).containsMatchIn(p)
+            if (cur.isNotEmpty() && (cur.length + p.length > maxChars || (sceneHeading && cur.length > maxChars / 2))) flush()
+            if (p.length > maxChars) {
+                // A very long paragraph: cut on sentence ends.
+                p.split(Regex("(?<=[.!?])\\s+")).forEach { sentence ->
+                    if (cur.length + sentence.length > maxChars) flush()
+                    cur.append(sentence).append(' ')
+                }
+            } else {
+                cur.append(p).append("\n\n")
+            }
+        }
+        flush()
+        return parts.ifEmpty { listOf(script.trim()) }
+    }
 
     // ---------- bible <-> JSON ----------
 
-    /** Pull the bible out of the model's reply, tolerating code fences and stray prose. */
-    fun parseBible(raw: String): Bible? {
-        val start = raw.indexOf('{')
-        val end = raw.lastIndexOf('}')
+    private fun jsonObjectIn(raw: String): JSONObject? {
+        val start = raw.indexOf('{'); val end = raw.lastIndexOf('}')
         if (start < 0 || end <= start) return null
-        return runCatching {
-            val o = JSONObject(raw.substring(start, end + 1))
-            val chars = o.optJSONArray("characters").objects().mapIndexedNotNull { idx, c ->
-                val look = c.optString("look").trim()
-                if (look.isBlank()) null
-                else Character(
-                    id = c.optString("id").ifBlank { "c${idx + 1}" },
-                    name = c.optString("name").ifBlank { "Character ${idx + 1}" },
-                    look = look,
-                    voice = c.optString("voice").takeIf { it in VOICES } ?: VOICES[idx % VOICES.size],
-                )
-            }
-            val shots = o.optJSONArray("shots").objects().mapNotNull { s ->
-                val action = s.optString("action").trim()
-                val line = s.optString("line").trim()
-                if (action.isBlank() && line.isBlank()) null
-                else Shot(
-                    characters = s.optJSONArray("characters").strings(),
-                    shot = s.optString("shot").trim(),
-                    camera = s.optString("camera").trim(),
-                    action = action.ifBlank { line },
-                    location = s.optString("location").trim(),
-                    line = line,
-                    speaker = s.optString("speaker").ifBlank { "narrator" },
-                    seconds = s.optDouble("seconds", 4.0).takeIf { !it.isNaN() }?.coerceIn(2.0, 12.0) ?: 4.0,
-                )
-            }
-            if (shots.isEmpty()) null
-            else Bible(
-                title = o.optString("title").ifBlank { "Untitled" },
-                style = o.optString("style").trim(),
-                narratorVoice = o.optString("narrator_voice").takeIf { it in VOICES } ?: "onyx",
-                characters = chars,
-                shots = shots,
-            )
-        }.getOrNull()
+        return runCatching { JSONObject(raw.substring(start, end + 1)) }.getOrNull()
     }
+
+    private fun jsonArrayIn(raw: String): JSONArray? {
+        val start = raw.indexOf('['); val end = raw.lastIndexOf(']')
+        if (start < 0 || end <= start) return null
+        return runCatching { JSONArray(raw.substring(start, end + 1)) }.getOrNull()
+    }
+
+    /** Title, look and cast from step 1 (shots empty). */
+    fun parseCast(raw: String): Bible? {
+        val o = jsonObjectIn(raw) ?: return null
+        val chars = o.optJSONArray("characters").objects().mapIndexedNotNull { idx, c ->
+            val look = c.optString("look").trim()
+            if (look.isBlank()) null
+            else Character(
+                id = c.optString("id").ifBlank { "c${idx + 1}" },
+                name = c.optString("name").ifBlank { "Character ${idx + 1}" },
+                look = look,
+                voice = c.optString("voice").takeIf { it in VOICES } ?: VOICES[idx % VOICES.size],
+            )
+        }
+        return Bible(
+            title = o.optString("title").ifBlank { "Untitled" },
+            style = o.optString("style").trim(),
+            narratorVoice = o.optString("narrator_voice").takeIf { it in VOICES } ?: "onyx",
+            characters = chars,
+            shots = emptyList(),
+        )
+    }
+
+    fun parseShots(arr: JSONArray?): List<Shot> = arr.objects().mapNotNull { s ->
+        val action = s.optString("action").trim()
+        val line = s.optString("line").trim()
+        if (action.isBlank() && line.isBlank()) null
+        else Shot(
+            characters = s.optJSONArray("characters").strings(),
+            shot = s.optString("shot").trim(),
+            camera = s.optString("camera").trim(),
+            action = action.ifBlank { line },
+            location = s.optString("location").trim(),
+            line = line,
+            speaker = s.optString("speaker").ifBlank { "narrator" },
+            seconds = s.optDouble("seconds", 4.0).takeIf { !it.isNaN() }?.coerceIn(2.0, 12.0) ?: 4.0,
+        )
+    }
+
+    fun parseShots(raw: String): List<Shot> = parseShots(jsonArrayIn(raw))
+
+    /** The steering reply: a sentence for the user plus the revised remaining shots. */
+    fun parseRevision(raw: String): Pair<String, List<Shot>>? {
+        val o = jsonObjectIn(raw) ?: return null
+        val shots = parseShots(o.optJSONArray("shots"))
+        if (shots.isEmpty()) return null
+        return o.optString("reply").ifBlank { "Updated the remaining shots." } to shots
+    }
+
+    /** The cast/look part of a bible as JSON, given to the model in every later step. */
+    fun castJson(b: Bible): String = JSONObject().apply {
+        put("title", b.title); put("style", b.style)
+        put("characters", JSONArray(b.characters.map {
+            JSONObject().put("id", it.id).put("name", it.name).put("look", it.look)
+        }))
+    }.toString()
+
+    fun shotsJson(shots: List<Shot>): String = JSONArray(shots.map { it.toJson() }).toString()
+
+    private fun Shot.toJson() = JSONObject().put("characters", JSONArray(characters)).put("shot", shot).put("camera", camera)
+        .put("action", action).put("location", location).put("line", line)
+        .put("speaker", speaker).put("seconds", seconds)
 
     private fun Bible.toJson(): String = JSONObject().apply {
         put("title", title)
@@ -132,11 +205,7 @@ object MovieMaker {
         put("characters", JSONArray(characters.map {
             JSONObject().put("id", it.id).put("name", it.name).put("look", it.look).put("voice", it.voice)
         }))
-        put("shots", JSONArray(shots.map {
-            JSONObject().put("characters", JSONArray(it.characters)).put("shot", it.shot).put("camera", it.camera)
-                .put("action", it.action).put("location", it.location).put("line", it.line)
-                .put("speaker", it.speaker).put("seconds", it.seconds)
-        }))
+        put("shots", JSONArray(shots.map { it.toJson() }))
     }.toString(1)
 
     private fun JSONArray?.objects(): List<JSONObject> =
@@ -154,6 +223,28 @@ object MovieMaker {
         d.listFiles()?.forEach { it.deleteRecursively() }
         File(d, "project.json").writeText(bible.toJson())
     }
+
+    /** Read the saved film back (to steer it). */
+    fun loadProject(context: Context): Bible? = runCatching {
+        val raw = File(dir(context), "project.json").readText()
+        val cast = parseCast(raw) ?: return null
+        cast.copy(shots = parseShots(JSONObject(raw).optJSONArray("shots")))
+    }.getOrNull()
+
+    /** Write the bible (keeps the rendered shots; the renderer re-reads it before every shot). */
+    fun writeProject(context: Context, bible: Bible) {
+        val f = File(dir(context), "project.json")
+        val tmp = File(dir(context), "project.json.tmp")
+        tmp.writeText(bible.toJson())
+        tmp.renameTo(f)
+    }
+
+    /** How many shots are already filmed or being filmed right now (those can't be steered any more). */
+    fun lockedShots(context: Context): Int = runCatching {
+        val st = JSONObject(File(dir(context), "state.json").readText())
+        val done = st.keys().asSequence().mapNotNull { it.toIntOrNull() }.maxOrNull() ?: -1
+        done + 2   // the next shot may already be in progress
+    }.getOrDefault(0)
 
     fun hasProject(context: Context): Boolean = File(dir(context), "project.json").exists()
 

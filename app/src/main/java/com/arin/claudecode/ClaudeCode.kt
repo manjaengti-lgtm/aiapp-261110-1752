@@ -26,21 +26,49 @@ object ClaudeCode {
     suspend fun connected(context: Context): Boolean =
         Shell.run(context, "[ -s $TOKEN_FILE ] && echo yes || echo no", 30_000).stdout.contains("yes")
 
-    /** Install the CLI (Node is already in Arin's Linux). Returns an error message, or null on success. */
+    /**
+     * Install the CLI. Returns an error message, or null on success.
+     *
+     * Not with `npm install -g`: the npm package now pulls in a ~380 MB native binary, and npm runs out of
+     * memory unpacking it under PRoot on a phone ("Aborted"). Instead fetch that same platform package
+     * straight from the npm registry with curl and stream just the binary out of it with tar. If that fails,
+     * fall back to Anthropic's official native installer.
+     */
     suspend fun install(context: Context, log: (String) -> Unit): String? {
-        log("Installing Claude Code with npm (this can take a few minutes)…")
-        val r = Shell.run(
-            context,
-            "export npm_config_yes=true; " +
-                "npm install -g @anthropic-ai/claude-code --no-fund --no-audit 2>&1 | tail -n 20; " +
-                "apt-get install -y ripgrep >/dev/null 2>&1 || true; " +
-                "command -v claude >/dev/null 2>&1 && echo ARIN_OK || echo ARIN_FAIL",
-            timeoutMs = 20 * 60_000L,
-        )
+        log("Installing Claude Code (about 100 MB download, a few minutes)…")
+        val script = """
+            set -o pipefail
+            case "${'$'}(uname -m)" in
+              aarch64|arm64) P=linux-arm64 ;;
+              x86_64|amd64) P=linux-x64 ;;
+              *) echo "This phone's CPU (${'$'}(uname -m)) has no Claude Code build."; echo ARIN_FAIL; exit 0 ;;
+            esac
+            V=${'$'}(curl -fsSL --retry 3 https://registry.npmjs.org/@anthropic-ai/claude-code/latest | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)
+            ok=0
+            if [ -n "${'$'}V" ]; then
+              echo "Downloading Claude Code ${'$'}V (${'$'}P)…"
+              rm -rf /tmp/cc && mkdir -p /tmp/cc
+              if curl -fL --retry 3 --retry-delay 3 -sS "https://registry.npmjs.org/@anthropic-ai/claude-code-${'$'}P/-/claude-code-${'$'}P-${'$'}V.tgz" \
+                   | tar -xz -C /tmp/cc package/claude; then
+                install -m 755 /tmp/cc/package/claude /usr/local/bin/claude && ok=1
+              fi
+              rm -rf /tmp/cc
+            fi
+            if [ "${'$'}ok" != 1 ]; then
+              echo "Registry download failed — trying Anthropic's installer…"
+              curl -fsSL https://claude.ai/install.sh | bash 2>&1 | tail -n 5
+              [ -x /root/.local/bin/claude ] && ln -sf /root/.local/bin/claude /usr/local/bin/claude
+            fi
+            # Remove a broken npm attempt so it can't shadow the working binary.
+            rm -f /usr/local/lib/node_modules/.bin/claude 2>/dev/null
+            apt-get install -y ripgrep >/dev/null 2>&1 || true
+            if claude --version 2>&1 | head -n 2; then echo ARIN_OK; else echo ARIN_FAIL; fi
+        """.trimIndent()
+        val r = Shell.run(context, script, timeoutMs = 25 * 60_000L)
         r.stdout.lines().filter { it.isNotBlank() && !it.contains("ARIN_OK") && !it.contains("ARIN_FAIL") }
             .takeLast(12).forEach(log)
         return if (r.stdout.contains("ARIN_OK")) { log("Claude Code installed ✓"); null }
-        else "Install failed. " + (r.stderr.ifBlank { r.stdout }).takeLast(300)
+        else "Install failed. " + (r.stdout.ifBlank { r.stderr }).trim().takeLast(300)
     }
 
     /** Start the browser login in the background. Returns the current output (should hold the OAuth URL). */

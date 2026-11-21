@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,9 +24,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -69,10 +73,14 @@ fun MovieMakerScreen(vm: ChatViewModel, onBack: () -> Unit) {
         unfocusedContainerColor = colors.surface,
     )
 
-    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = colors.onBackground) }
-            Text("Movie Maker", style = MaterialTheme.typography.titleLarge, color = colors.onBackground)
+            Column {
+                Text("Movie Maker", style = MaterialTheme.typography.titleLarge, color = colors.onBackground)
+                // Which model is directing — the one picked in chat, shown like the chat header.
+                Text("Director: ${vm.movieDirectorLabel}", style = MaterialTheme.typography.labelMedium, color = colors.primary)
+            }
         }
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
@@ -122,23 +130,58 @@ fun MovieMakerScreen(vm: ChatViewModel, onBack: () -> Unit) {
                 }
             }
 
+            vm.movieError?.let { err ->
+                Surface(color = colors.errorContainer, contentColor = colors.onErrorContainer, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
+                    Text(err, Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+
             if (vm.movieBusy || vm.movieProgress.isNotEmpty() || vm.movieLog.isNotEmpty()) {
                 Surface(color = colors.surfaceVariant, contentColor = colors.onSurface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (vm.movieBusy) { CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)) }
-                            Text("Progress", style = MaterialTheme.typography.titleSmall)
+                            Text("Progress", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                            vm.movieFraction?.takeIf { vm.movieBusy }?.let {
+                                Text("${(it * 100).toInt()}%", style = MaterialTheme.typography.labelLarge, color = colors.primary)
+                            }
                         }
-                        Spacer(Modifier.height(4.dp))
-                        vm.movieLog.takeLast(6).forEach {
+                        if (vm.movieBusy) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(vm.movieStep, style = MaterialTheme.typography.bodyMedium)
+                            Spacer(Modifier.height(8.dp))
+                            val f = vm.movieFraction
+                            if (f != null) {
+                                LinearProgressIndicator(progress = { f }, modifier = Modifier.fillMaxWidth().height(6.dp))
+                            } else {
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(6.dp))
+                            }
+                            if (vm.movieActivity.isNotEmpty()) {
+                                Spacer(Modifier.height(6.dp))
+                                Text(vm.movieActivity, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        vm.movieLog.takeLast(4).forEach {
                             Text(it, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                         }
                         if (vm.movieProgress.isNotEmpty()) {
                             Spacer(Modifier.height(4.dp))
-                            Text(vm.movieProgress, style = MaterialTheme.typography.bodyMedium)
+                            Text(vm.movieProgress, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                        }
+                        if (vm.movieBusy) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "Keeps going if you leave Arin or turn the screen off — progress is in your notifications.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.onSurfaceVariant,
+                            )
                         }
                     }
                 }
+            }
+
+            if (vm.movieBusy || vm.movieHasProject || vm.movieChat.isNotEmpty()) {
+                DirectorChat(vm, fieldColors)
             }
 
             if (vm.movieReady) {
@@ -226,6 +269,57 @@ private fun MotionSettings(vm: ChatViewModel, fieldColors: androidx.compose.mate
                     Text("Burn subtitles into the video", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     Switch(checked = vm.movieSubtitles, onCheckedChange = { vm.updateMovieSubtitles(it) })
                 }
+            }
+        }
+    }
+}
+
+/** Talk to the director while the film is being made: notes steer the shots that aren't filmed yet. */
+@Composable
+private fun DirectorChat(vm: ChatViewModel, fieldColors: androidx.compose.material3.TextFieldColors) {
+    val colors = MaterialTheme.colorScheme
+    var note by rememberSaveable { mutableStateOf("") }
+    Surface(color = colors.surfaceVariant, contentColor = colors.onSurface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Director chat", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Steer the film any time — e.g. “make it night”, “more close-ups of Mara”, “end on the sea”. " +
+                    "Changes apply to shots not filmed yet.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant,
+            )
+            vm.movieChat.takeLast(8).forEach { line ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = if (line.fromUser) Arrangement.End else Arrangement.Start) {
+                    Surface(
+                        color = if (line.fromUser) colors.primaryContainer else colors.surface,
+                        contentColor = if (line.fromUser) colors.onPrimaryContainer else colors.onSurface,
+                        shape = RoundedCornerShape(14.dp),
+                    ) {
+                        Text(line.text, Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+            if (vm.movieSteering) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(vm.movieActivity.ifBlank { "${vm.movieDirectorLabel} is rewriting the shots…" }, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    placeholder = { Text("Message the director") },
+                    colors = fieldColors,
+                    shape = RoundedCornerShape(24.dp),
+                    maxLines = 4,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(
+                    onClick = { vm.sendMovieNote(note); note = "" },
+                    enabled = note.isNotBlank() && !vm.movieSteering,
+                ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = if (note.isNotBlank()) colors.primary else colors.onSurfaceVariant) }
             }
         }
     }
