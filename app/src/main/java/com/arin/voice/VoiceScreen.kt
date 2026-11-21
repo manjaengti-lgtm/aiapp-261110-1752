@@ -72,6 +72,8 @@ fun VoiceMode(vm: ChatViewModel, onClose: () -> Unit) {
 
     DisposableEffect(Unit) {
         voice.rate = vm.settings.voiceRate
+        voice.naturalVoice = vm.settings.voiceNatural
+        voice.voiceName = vm.settings.voiceName
         voice.start()
         onDispose {
             voice.close()
@@ -152,7 +154,8 @@ fun VoiceMode(vm: ChatViewModel, onClose: () -> Unit) {
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
-                    "Uses your phone's speech recognition and voice. Replies are saved in this chat.",
+                    if (vm.settings.voiceNatural) "Natural voice over the internet, with your phone's voice as backup. Replies are saved in this chat."
+                    else "Uses your phone's speech recognition and voice. Replies are saved in this chat.",
                     style = MaterialTheme.typography.labelSmall,
                     color = androidx.compose.ui.graphics.Color(0xFF6E7887),
                     textAlign = TextAlign.Center,

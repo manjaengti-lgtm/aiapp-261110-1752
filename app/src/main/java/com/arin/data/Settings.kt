@@ -152,6 +152,16 @@ class Settings(context: Context) {
         get() = prefs.getFloat("voice_rate", 1.0f)
         set(value) = prefs.edit().putFloat("voice_rate", value).apply()
 
+    /** Use a natural ChatGPT-style voice over the internet, falling back to the phone's voice when offline. */
+    var voiceNatural: Boolean
+        get() = prefs.getBoolean("voice_natural", true)
+        set(value) = prefs.edit().putBoolean("voice_natural", value).apply()
+
+    /** Which natural voice: nova, shimmer, alloy, echo, fable or onyx. */
+    var voiceName: String
+        get() = prefs.getString("voice_name", "nova") ?: "nova"
+        set(value) = prefs.edit().putString("voice_name", value.trim()).apply()
+
     /** Other secrets kept with the API keys, such as the GitHub token Build mode uses. */
     fun secret(name: String): String = keys.getString("extra_$name", "").orEmpty()
 

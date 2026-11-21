@@ -47,7 +47,21 @@ class VoiceController(
     private var closed = false
     var rate = 1.0f
 
+    /** Use the natural ChatGPT-style voice (Pollinations) instead of the robotic phone voice. */
+    var naturalVoice = true
+    /** Which natural voice: nova, shimmer, alloy, echo, fable, onyx. */
+    var voiceName = "nova"
+        set(v) { field = v; neural?.voice = v }
+    private var neural: NeuralVoice? = null
+
     fun start() {
+        if (naturalVoice) {
+            neural = NeuralVoice(context.cacheDir).also { it.voice = voiceName }
+            neural?.start(
+                onClipDone = { mainThread { onUtteranceEnded() } },
+                onFallback = { text -> mainThread { if (!closed) deviceSpeak(text, counted = true) } },
+            )
+        }
         tts = TextToSpeech(context) { status ->
             ttsReady = status == TextToSpeech.SUCCESS
             if (ttsReady) {
@@ -58,7 +72,7 @@ class VoiceController(
                     @Deprecated("Deprecated in Java")
                     override fun onError(id: String?) { mainThread { onUtteranceEnded() } }
                 })
-                pendingSpeech.toList().also { pendingSpeech.clear() }.forEach { speak(it) }
+                pendingSpeech.toList().also { pendingSpeech.clear() }.forEach { deviceSpeak(it, counted = false) }
             }
         }
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
@@ -72,6 +86,7 @@ class VoiceController(
     fun listen() {
         if (closed) return
         tts?.stop()
+        neural?.stop()
         queued.set(0)
         partial = ""
         error = null
@@ -99,8 +114,15 @@ class VoiceController(
     fun say(sentence: String) {
         val clean = speakable(sentence)
         if (clean.isBlank()) return
+        val n = neural
+        if (naturalVoice && n != null) {
+            state = VoiceState.Speaking
+            queued.incrementAndGet()
+            n.speak(clean)
+            return
+        }
         if (!ttsReady) { pendingSpeech += clean; return }
-        speak(clean)
+        deviceSpeak(clean, counted = false)
     }
 
     /** The reply is complete; listening resumes once the last sentence has been spoken. */
@@ -123,13 +145,20 @@ class VoiceController(
         closed = true
         runCatching { recognizer?.destroy() }
         runCatching { tts?.stop(); tts?.shutdown() }
+        runCatching { neural?.close() }
         recognizer = null
         tts = null
+        neural = null
     }
 
-    private fun speak(text: String) {
+    /**
+     * Speak one sentence with the phone's own voice. [counted] is true when the slot was already
+     * counted in [queued] (a natural-voice sentence that fell back to the device because it was offline).
+     */
+    private fun deviceSpeak(text: String, counted: Boolean) {
         state = VoiceState.Speaking
-        queued.incrementAndGet()
+        if (!counted) queued.incrementAndGet()
+        if (!ttsReady) { onUtteranceEnded(); return }
         tts?.setSpeechRate(rate)
         tts?.speak(text, TextToSpeech.QUEUE_ADD, null, "arin-${System.nanoTime()}")
     }

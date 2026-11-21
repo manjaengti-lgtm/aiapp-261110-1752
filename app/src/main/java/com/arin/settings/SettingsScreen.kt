@@ -184,6 +184,30 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
                     valueRange = 0.6f..1.8f,
                     steps = 5,
                 )
+                var natural by remember { mutableStateOf(vm.settings.voiceNatural) }
+                Toggle(
+                    "Natural voice",
+                    "A warm, human-like voice over the internet instead of the robotic phone voice. Falls back to the phone's voice when you're offline.",
+                    natural,
+                ) { natural = it; vm.settings.voiceNatural = it }
+                if (natural) {
+                    var picked by remember { mutableStateOf(vm.settings.voiceName) }
+                    Text("Voice", style = MaterialTheme.typography.bodyLarge)
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf(
+                            "nova" to "Nova", "shimmer" to "Shimmer", "alloy" to "Alloy",
+                            "echo" to "Echo", "fable" to "Fable", "onyx" to "Onyx",
+                        ).forEach { (id, label) ->
+                            androidx.compose.material3.FilterChip(
+                                selected = picked == id,
+                                onClick = { picked = id; vm.settings.voiceName = id },
+                                label = { Text(label) },
+                            )
+                        }
+                    }
+                }
             }
 
             // Extra features, folded away so the screen stays simple. Tap a row to open it.
