@@ -59,6 +59,7 @@ fun ChatsDrawer(
     onBuild: () -> Unit = {},
     onLogs: () -> Unit = {},
     onFree: () -> Unit = {},
+    onClaudeCode: () -> Unit = {},
     onProject: (com.arin.data.Project) -> Unit,
 ) {
     var renaming by remember { mutableStateOf<ChatSummary?>(null) }
@@ -151,6 +152,7 @@ fun ChatsDrawer(
                 }
             }
             DrawerRow(icon = { Icon(Icons.Filled.Star, contentDescription = null) }, label = "Free tokens", onClick = onFree)
+            DrawerRow(icon = { Icon(Icons.Filled.Build, contentDescription = null) }, label = "Claude Code (your Pro login)", onClick = onClaudeCode)
             DrawerRow(icon = { Icon(Icons.Filled.Build, contentDescription = null) }, label = "Build an app (APK)", onClick = onBuild)
             DrawerRow(
                 icon = { Icon(Icons.Filled.Build, contentDescription = null) },

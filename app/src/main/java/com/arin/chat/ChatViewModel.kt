@@ -477,6 +477,125 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---- Claude Code: run Anthropic's CLI in Arin's Linux on the person's own Pro/Max login ----
+
+    var ccInstalled by mutableStateOf(false)
+    var ccConnected by mutableStateOf(false)
+    var ccBusy by mutableStateOf(false)
+    var ccLoginUrl by mutableStateOf<String?>(null)
+    var ccOutput by mutableStateOf("")
+    val ccLog = mutableStateListOf<String>()
+
+    private fun ccLogLine(line: String) {
+        ArinApp.scope.launch(kotlinx.coroutines.Dispatchers.Main) {
+            ccLog += line
+            while (ccLog.size > 30) ccLog.removeAt(0)
+        }
+    }
+
+    fun refreshClaudeCode() {
+        val app = getApplication<Application>()
+        ArinApp.scope.launch {
+            ccInstalled = com.arin.terminal.Linux.installed(app) && com.arin.claudecode.ClaudeCode.installed(app)
+            ccConnected = ccInstalled && com.arin.claudecode.ClaudeCode.connected(app)
+        }
+    }
+
+    fun installClaudeCode() {
+        if (ccBusy || linuxBusy) return
+        val app = getApplication<Application>()
+        ccBusy = true
+        ccLog.clear()
+        ArinApp.scope.launch {
+            try {
+                if (!com.arin.terminal.Linux.nodeReady(app)) {
+                    ccLogLine("Setting up Linux and Node first…")
+                    com.arin.terminal.Linux.install(app) { ccLogLine(it) }
+                }
+                val err = com.arin.claudecode.ClaudeCode.install(app) { ccLogLine(it) }
+                ccInstalled = com.arin.claudecode.ClaudeCode.installed(app)
+                if (err != null) notice = err
+            } catch (e: Exception) {
+                notice = "Claude Code install failed: ${e.message}"
+            } finally {
+                ccBusy = false
+            }
+        }
+    }
+
+    fun startCcLogin() {
+        if (ccBusy) return
+        val app = getApplication<Application>()
+        ccBusy = true
+        ccLoginUrl = null
+        ArinApp.scope.launch {
+            try {
+                val out = com.arin.claudecode.ClaudeCode.startLogin(app)
+                ccLoginUrl = com.arin.claudecode.ClaudeCode.urlIn(out)
+                if (ccLoginUrl == null) notice = "Couldn't get the login link. Make sure Claude Code is installed."
+                // Poll for the token for a while (the browser redirect usually completes it on its own).
+                repeat(40) {
+                    kotlinx.coroutines.delay(3000)
+                    if (com.arin.claudecode.ClaudeCode.captureToken(app)) {
+                        ccConnected = true
+                        notice = "Connected to Claude Code ✓"
+                        return@launch
+                    }
+                }
+            } catch (e: Exception) {
+                notice = "Login error: ${e.message}"
+            } finally {
+                ccBusy = false
+            }
+        }
+    }
+
+    fun pasteCcCode(code: String) {
+        val app = getApplication<Application>()
+        ArinApp.scope.launch {
+            com.arin.claudecode.ClaudeCode.pasteCode(app, code)
+            repeat(10) {
+                kotlinx.coroutines.delay(2000)
+                if (com.arin.claudecode.ClaudeCode.captureToken(app)) {
+                    ccConnected = true
+                    notice = "Connected to Claude Code ✓"
+                    return@launch
+                }
+            }
+        }
+    }
+
+    fun saveCcToken(token: String) {
+        val app = getApplication<Application>()
+        ArinApp.scope.launch {
+            ccConnected = com.arin.claudecode.ClaudeCode.saveToken(app, token)
+            notice = if (ccConnected) "Connected to Claude Code ✓" else "That didn't look like a valid token."
+        }
+    }
+
+    fun ccLogout() {
+        val app = getApplication<Application>()
+        ArinApp.scope.launch {
+            com.arin.claudecode.ClaudeCode.logout(app)
+            ccConnected = false
+        }
+    }
+
+    fun askClaudeCode(prompt: String) {
+        if (ccBusy || prompt.isBlank()) return
+        val app = getApplication<Application>()
+        ccBusy = true
+        ccOutput = "Thinking…"
+        ArinApp.scope.launch {
+            ccOutput = try {
+                com.arin.claudecode.ClaudeCode.ask(app, prompt)
+            } catch (e: Exception) {
+                "Error: ${e.message}"
+            }
+            ccBusy = false
+        }
+    }
+
     fun setUpRea() {
         toggleTerminal(true)
         if (mcpServers.none { it.name == com.arin.mcp.Mcp.REA.name }) saveServer(com.arin.mcp.Mcp.REA)

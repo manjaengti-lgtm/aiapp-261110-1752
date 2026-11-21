@@ -94,6 +94,7 @@ fun ChatScreen(
     onOpenBuild: () -> Unit = {},
     onOpenLogs: () -> Unit = {},
     onOpenFree: () -> Unit = {},
+    onOpenClaudeCode: () -> Unit = {},
     startVoice: Boolean = false,
     onVoiceStarted: () -> Unit = {},
 ) {
@@ -223,6 +224,7 @@ fun ChatScreen(
                 onBuild = { scope.launch { drawer.close() }; onOpenBuild() },
                 onLogs = { scope.launch { drawer.close() }; onOpenLogs() },
                 onFree = { scope.launch { drawer.close() }; onOpenFree() },
+                onClaudeCode = { scope.launch { drawer.close() }; onOpenClaudeCode() },
             )
         },
     ) {
