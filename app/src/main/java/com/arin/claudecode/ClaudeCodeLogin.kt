@@ -59,8 +59,8 @@ fun ClaudeCodeLogin(vm: ChatViewModel) {
 
         Text("Sign in with", style = MaterialTheme.typography.titleSmall)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = vm.ccBackend == "pro", onClick = { vm.setCcBackend("pro") }, label = { Text("Claude Pro (Google)") })
-            FilterChip(selected = vm.ccBackend == "custom", onClick = { vm.setCcBackend("custom") }, label = { Text("Custom API") })
+            FilterChip(selected = vm.ccBackend == "pro", onClick = { vm.chooseCcBackend("pro") }, label = { Text("Claude Pro (Google)") })
+            FilterChip(selected = vm.ccBackend == "custom", onClick = { vm.chooseCcBackend("custom") }, label = { Text("Custom API") })
         }
 
         if (vm.ccBackend == "pro") ProLogin(vm) else CustomApiLogin(vm)

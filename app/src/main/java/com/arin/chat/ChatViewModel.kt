@@ -609,7 +609,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var ccRunning by mutableStateOf(false)
     private var ccJob: kotlinx.coroutines.Job? = null
 
-    fun setCcBackend(kind: String) {
+    fun chooseCcBackend(kind: String) {
         if (ccRunning) return
         ccBackend = kind
         settings.ccBackend = kind
@@ -630,7 +630,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 ccCustomModels = c.models
                 if (ccCustomModelState !in c.models) { ccCustomModelState = c.models.first(); settings.ccCustomModel = c.models.first() }
                 ccCustomReady = true
-                setCcBackend("custom")
+                chooseCcBackend("custom")
             } catch (e: Exception) {
                 ccConnectError = e.message ?: "Couldn't connect."
             } finally {
