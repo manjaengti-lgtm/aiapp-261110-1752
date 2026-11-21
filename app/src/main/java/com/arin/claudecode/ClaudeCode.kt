@@ -3,6 +3,8 @@ package com.arin.claudecode
 import android.content.Context
 import com.arin.terminal.Shell
 import kotlinx.coroutines.delay
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
  * Runs Anthropic's Claude Code CLI inside Arin's built-in Linux, signed in with the person's own
@@ -116,27 +118,182 @@ object ClaudeCode {
         Shell.run(context, "rm -f $TOKEN_FILE; pkill -f 'claude setup-token' 2>/dev/null; echo ok", 60_000)
     }
 
-    /** A custom Anthropic-compatible backend (e.g. DeepSeek), used instead of the Pro login. */
+    /** A custom Anthropic-compatible backend (e.g. DeepSeek): the brain. Claude Code is the tool. */
     data class Backend(val base: String, val key: String, val model: String)
 
-    /** Run a prompt non-interactively and return the answer. With [custom], the brain is that API. */
-    suspend fun ask(context: Context, prompt: String, custom: Backend? = null): String {
-        val setup = if (custom != null && custom.base.isNotBlank() && custom.key.isNotBlank()) {
-            val model = custom.model.takeIf { it.isNotBlank() }?.let {
-                "export ANTHROPIC_MODEL='${esc(it)}'; export ANTHROPIC_DEFAULT_OPUS_MODEL='${esc(it)}'; " +
-                    "export ANTHROPIC_DEFAULT_SONNET_MODEL='${esc(it)}'; export ANTHROPIC_DEFAULT_HAIKU_MODEL='${esc(it)}'; "
-            } ?: ""
-            "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY; " +
-                "export ANTHROPIC_BASE_URL='${esc(custom.base)}'; export ANTHROPIC_AUTH_TOKEN='${esc(custom.key)}'; $model"
-        } else {
-            "unset ANTHROPIC_API_KEY ANTHROPIC_BASE_URL ANTHROPIC_MODEL; " +
-                "export CLAUDE_CODE_OAUTH_TOKEN=\"$(cat $TOKEN_FILE 2>/dev/null)\"; "
+    // ---------- connecting a custom API: find its Anthropic endpoint and list its models ----------
+
+    data class Connection(val anthropicBase: String, val models: List<String>)
+
+    private val http = okhttp3.OkHttpClient.Builder()
+        .connectTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+
+    private val notChat = listOf("embed", "whisper", "tts", "transcribe", "moderation", "rerank", "dall-e", "image", "flux", "sdxl", "guard")
+
+    private suspend fun get(url: String, headers: Map<String, String>): Pair<Int, String> =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val req = okhttp3.Request.Builder().url(url).apply { headers.forEach { (k, v) -> header(k, v) } }.get().build()
+                http.newCall(req).execute().use { it.code to (it.body?.string().orEmpty()) }
+            }.getOrElse { 0 to (it.message ?: "network error") }
         }
+
+    private suspend fun post(url: String, headers: Map<String, String>, body: String): Pair<Int, String> =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val req = okhttp3.Request.Builder().url(url).apply { headers.forEach { (k, v) -> header(k, v) } }
+                    .post(body.toRequestBody("application/json".toMediaType())).build()
+                http.newCall(req).execute().use { it.code to (it.body?.string().orEmpty()) }
+            }.getOrElse { 0 to (it.message ?: "network error") }
+        }
+
+    private fun ids(body: String): List<String> = runCatching {
+        val root = org.json.JSONTokener(body).nextValue()
+        val arr = when (root) {
+            is org.json.JSONObject -> root.optJSONArray("data") ?: root.optJSONArray("models")
+            is org.json.JSONArray -> root
+            else -> null
+        } ?: return emptyList()
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i)
+            (o?.optString("id")?.takeIf { it.isNotBlank() } ?: o?.optString("name")?.takeIf { it.isNotBlank() } ?: arr.optString(i))
+                .takeIf { it.isNotBlank() && !it.startsWith("{") }
+        }.filter { id -> notChat.none { id.lowercase().contains(it) } }.distinct()
+    }.getOrDefault(emptyList())
+
+    /**
+     * From just a URL and key: find where the API speaks Anthropic's format (what Claude Code needs) and list
+     * its models. Throws with a readable message if it can't.
+     */
+    suspend fun connect(base: String, key: String): Connection {
+        val clean = base.trim().trimEnd('/').let { if (it.startsWith("http")) it else "https://$it" }
+        val root = clean.removeSuffix("/v1/messages").removeSuffix("/v1").removeSuffix("/anthropic").removeSuffix("/v1")
+        val anthropicCandidates = (if (clean.endsWith("/anthropic")) listOf(clean) else listOf("$root/anthropic", clean, root)).distinct()
+        val bearer = mapOf("Authorization" to "Bearer $key")
+        val anth = mapOf("x-api-key" to key, "Authorization" to "Bearer $key", "anthropic-version" to "2023-06-01")
+
+        // 1. Models: OpenAI-style list at the root, else Anthropic-style list.
+        var models = emptyList<String>()
+        for ((url, h) in listOf("$root/models" to bearer, "$root/v1/models" to bearer) + anthropicCandidates.map { "$it/v1/models" to anth }) {
+            val (code, body) = get(url, h)
+            if (code == 401 || code == 403) throw IllegalStateException("The API key was rejected (HTTP $code).")
+            if (code in 200..299) { models = ids(body); if (models.isNotEmpty()) break }
+        }
+
+        // 2. The Anthropic-format endpoint: the first candidate whose /v1/messages exists.
+        val probeModel = models.firstOrNull() ?: "claude-sonnet-4-5"
+        val probe = """{"model":"$probeModel","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}"""
+        var chosen: String? = null
+        for (cand in anthropicCandidates) {
+            val (code, body) = post("$cand/v1/messages", anth, probe)
+            if (code == 401 || code == 403) throw IllegalStateException("The API key was rejected (HTTP $code).")
+            if (code == 0) throw IllegalStateException("Couldn't reach $cand: $body")
+            if (code != 404 && code != 405) { chosen = cand; break }
+        }
+        chosen ?: throw IllegalStateException(
+            "This URL has no Anthropic-compatible API, which Claude Code needs. For DeepSeek use https://api.deepseek.com",
+        )
+        if (models.isEmpty()) throw IllegalStateException("Connected, but the API didn't list any models.")
+        return Connection(chosen, models)
+    }
+
+    // ---------- running Claude Code like a chat ----------
+
+    private const val RUN_OUT = "/root/.cc_run.jsonl"
+    private const val RUN_PROMPT = "/root/.cc_prompt.txt"
+
+    /**
+     * Start one turn in the background. The prompt goes in on stdin (no "no stdin data" wait), output is
+     * stream-json so steps show live, and [continueChat] resumes the same Claude Code conversation.
+     */
+    suspend fun startTurn(context: Context, prompt: String, b: Backend, continueChat: Boolean): Boolean {
+        val m = esc(b.model)
+        val env = "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY; " +
+            "export ANTHROPIC_BASE_URL='${esc(b.base)}' ANTHROPIC_AUTH_TOKEN='${esc(b.key)}' " +
+            "ANTHROPIC_MODEL='$m' ANTHROPIC_SMALL_FAST_MODEL='$m' ANTHROPIC_DEFAULT_OPUS_MODEL='$m' " +
+            "ANTHROPIC_DEFAULT_SONNET_MODEL='$m' ANTHROPIC_DEFAULT_HAIKU_MODEL='$m' CLAUDE_CODE_SUBAGENT_MODEL='$m' " +
+            // Only talk to the person's API: no Anthropic telemetry, update checks or error reporting.
+            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1; "
+        val b64 = android.util.Base64.encodeToString(prompt.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+        val flags = (if (continueChat) "--continue " else "") +
+            "--model '$m' --output-format stream-json --verbose " +
+            "--allowedTools Bash Read Edit Write Glob Grep WebFetch WebSearch TodoWrite"
         val r = Shell.run(
             context,
-            setup + "cd /root/files 2>/dev/null || cd /root; claude -p '${esc(prompt)}' 2>&1",
-            timeoutMs = 10 * 60_000L,
+            "pkill -f 'claude -[p]' 2>/dev/null; echo '$b64' | base64 -d > $RUN_PROMPT; rm -f $RUN_OUT; " +
+                "mkdir -p /root/files; cd /root/files; " +
+                "setsid bash -c \"$env claude -p $flags < $RUN_PROMPT > $RUN_OUT 2>&1; echo '{\\\"type\\\":\\\"arin_end\\\"}' >> $RUN_OUT\" >/dev/null 2>&1 & echo started",
+            60_000,
         )
-        return (r.stdout.ifBlank { r.stderr }).ifBlank { r.error ?: "No output from Claude Code." }
+        return r.stdout.contains("started")
+    }
+
+    suspend fun stopTurn(context: Context) {
+        Shell.run(context, "pkill -f 'claude -[p]' 2>/dev/null; echo ok", 30_000)
+    }
+
+    /** What the running turn has produced so far. */
+    data class Turn(val text: String, val steps: List<String>, val done: Boolean, val error: Boolean)
+
+    suspend fun readTurn(context: Context): Turn {
+        val raw = Shell.run(context, "cat $RUN_OUT 2>/dev/null", 30_000).stdout
+        return parseTurn(raw)
+    }
+
+    fun parseTurn(raw: String): Turn {
+        val text = StringBuilder()
+        val steps = mutableListOf<String>()
+        var done = false
+        var error = false
+        var result: String? = null
+        val plain = StringBuilder()
+        raw.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.forEach { line ->
+            val o = runCatching { org.json.JSONObject(line) }.getOrNull()
+            if (o == null) { plain.append(line).append('\n'); return@forEach }
+            when (o.optString("type")) {
+                "assistant" -> {
+                    val content = o.optJSONObject("message")?.optJSONArray("content") ?: return@forEach
+                    for (i in 0 until content.length()) {
+                        val c = content.optJSONObject(i) ?: continue
+                        when (c.optString("type")) {
+                            "text" -> c.optString("text").takeIf { it.isNotBlank() }?.let {
+                                if (text.isNotEmpty()) text.append("\n\n")
+                                text.append(it.trim())
+                            }
+                            "tool_use" -> steps += describeTool(c.optString("name"), c.optJSONObject("input"))
+                        }
+                    }
+                }
+                "result" -> {
+                    done = true
+                    error = o.optBoolean("is_error")
+                    result = o.optString("result").takeIf { it.isNotBlank() }
+                }
+                "arin_end" -> done = true
+            }
+        }
+        val finalText = when {
+            text.isNotEmpty() -> text.toString()
+            result != null -> result!!
+            else -> plain.toString().trim()   // e.g. an error printed before any JSON
+        }
+        return Turn(finalText, steps, done, error || (done && text.isEmpty() && result == null && plain.isNotBlank()))
+    }
+
+    private fun describeTool(name: String, input: org.json.JSONObject?): String {
+        fun arg(k: String) = input?.optString(k).orEmpty()
+        return when (name) {
+            "Bash" -> "$ " + arg("command").lines().first().take(80)
+            "Read" -> "Read " + arg("file_path").substringAfterLast('/')
+            "Edit", "MultiEdit" -> "Edit " + arg("file_path").substringAfterLast('/')
+            "Write" -> "Write " + arg("file_path").substringAfterLast('/')
+            "Glob", "Grep" -> "$name " + arg("pattern").take(60)
+            "WebFetch" -> "Fetch " + arg("url").take(60)
+            "WebSearch" -> "Search " + arg("query").take(60)
+            "TodoWrite" -> "Updated the plan"
+            else -> name
+        }
     }
 }

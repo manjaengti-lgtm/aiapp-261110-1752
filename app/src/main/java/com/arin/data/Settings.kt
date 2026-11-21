@@ -196,6 +196,11 @@ class Settings(context: Context) {
         get() = secret("cc_custom")
         set(value) = setSecret("cc_custom", value)
 
+    /** Models the Claude Code API listed when connecting (kept only for Claude Code, not the chat tab). */
+    var ccCustomModels: List<String>
+        get() = (prefs.getString("cc_custom_models", "") ?: "").split('\n').filter { it.isNotBlank() }
+        set(value) = prefs.edit().putString("cc_custom_models", value.joinToString("\n")).apply()
+
     // ---- Movie Maker (film studio) ----
 
     /** The person's own Hugging Face token: free ZeroGPU quota is counted against their account. Encrypted. */

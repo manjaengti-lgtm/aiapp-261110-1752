@@ -508,8 +508,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         ccLog.clear()
         ArinApp.scope.launch {
             try {
-                if (!com.arin.terminal.Linux.nodeReady(app)) {
-                    ccLogLine("Setting up Linux and Node first…")
+                if (!com.arin.terminal.Linux.installed(app)) {
+                    ccLogLine("Setting up Linux first…")
                     com.arin.terminal.Linux.install(app) { ccLogLine(it) }
                 }
                 val err = com.arin.claudecode.ClaudeCode.install(app) { ccLogLine(it) }
@@ -581,21 +581,112 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun askClaudeCode(prompt: String) {
-        if (ccBusy || prompt.isBlank()) return
-        val app = getApplication<Application>()
-        ccBusy = true
-        ccOutput = "Thinking…"
-        val custom = if (settings.ccBackend == "custom")
-            com.arin.claudecode.ClaudeCode.Backend(settings.ccCustomBase, settings.ccCustomKey, settings.ccCustomModel)
-        else null
+    // ---- Claude Code chat: the person's custom API is the brain, Claude Code is the tool ----
+
+    data class CcMessage(val fromUser: Boolean, val text: String, val steps: List<String> = emptyList(), val running: Boolean = false, val error: Boolean = false)
+
+    val ccMessages = mutableStateListOf<CcMessage>()
+    var ccModels by mutableStateOf(settings.ccCustomModels)
+        private set
+    var ccModel by mutableStateOf(settings.ccCustomModel)
+        private set
+    var ccApiConnected by mutableStateOf(settings.ccCustomBase.isNotBlank() && settings.ccCustomKey.isNotBlank() && settings.ccCustomModel.isNotBlank())
+        private set
+    var ccConnecting by mutableStateOf(false)
+    var ccConnectError by mutableStateOf<String?>(null)
+    var ccRunning by mutableStateOf(false)
+    private var ccJob: kotlinx.coroutines.Job? = null
+
+    /** Connect with only a URL and key: finds the Anthropic endpoint and lists the models. */
+    fun connectCcApi(baseUrl: String, key: String) {
+        if (ccConnecting || baseUrl.isBlank() || key.isBlank()) return
+        ccConnecting = true
+        ccConnectError = null
         ArinApp.scope.launch {
-            ccOutput = try {
-                com.arin.claudecode.ClaudeCode.ask(app, prompt, custom)
+            try {
+                val c = com.arin.claudecode.ClaudeCode.connect(baseUrl, key.trim())
+                settings.ccBackend = "custom"
+                settings.ccCustomBase = c.anthropicBase
+                settings.ccCustomKey = key.trim()
+                settings.ccCustomModels = c.models
+                ccModels = c.models
+                if (ccModel !in c.models) selectCcModel(c.models.first())
+                ccApiConnected = true
             } catch (e: Exception) {
-                "Error: ${e.message}"
+                ccConnectError = e.message ?: "Couldn't connect."
+            } finally {
+                ccConnecting = false
             }
-            ccBusy = false
+        }
+    }
+
+    fun disconnectCcApi() {
+        settings.ccCustomKey = ""
+        ccApiConnected = false
+    }
+
+    fun selectCcModel(id: String) {
+        ccModel = id
+        settings.ccCustomModel = id
+    }
+
+    fun newCcChat() {
+        if (ccRunning) return
+        ccMessages.clear()
+    }
+
+    /** Send a message. Follow-ups continue the same Claude Code conversation. */
+    fun askClaudeCode(prompt: String) {
+        val text = prompt.trim()
+        if (ccRunning || text.isEmpty() || !ccApiConnected) return
+        val app = getApplication<Application>()
+        val continueChat = ccMessages.any { !it.fromUser && !it.error }
+        ccMessages += CcMessage(true, text)
+        ccMessages += CcMessage(false, "", running = true)
+        ccRunning = true
+        val backend = com.arin.claudecode.ClaudeCode.Backend(settings.ccCustomBase, settings.ccCustomKey, ccModel)
+        ReplyService.start(app)
+        ccJob = ArinApp.scope.launch {
+            fun show(t: com.arin.claudecode.ClaudeCode.Turn, running: Boolean) {
+                val idx = ccMessages.lastIndex
+                if (idx >= 0) ccMessages[idx] = CcMessage(false, t.text, t.steps, running, t.error)
+            }
+            try {
+                if (!com.arin.claudecode.ClaudeCode.startTurn(app, text, backend, continueChat)) {
+                    show(com.arin.claudecode.ClaudeCode.Turn("Couldn't start Claude Code. Is Linux set up?", emptyList(), true, true), false)
+                    return@launch
+                }
+                val deadline = System.currentTimeMillis() + 30 * 60_000L
+                while (System.currentTimeMillis() < deadline) {
+                    kotlinx.coroutines.delay(1200)
+                    val t = com.arin.claudecode.ClaudeCode.readTurn(app)
+                    show(t, !t.done)
+                    if (t.done) {
+                        if (t.text.isBlank()) show(t.copy(text = "(No answer — check the model and API key.)", error = true), false)
+                        return@launch
+                    }
+                }
+                show(com.arin.claudecode.ClaudeCode.Turn("Stopped after 30 minutes.", emptyList(), true, true), false)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                show(com.arin.claudecode.ClaudeCode.Turn("Error: ${e.message}", emptyList(), true, true), false)
+            } finally {
+                ccRunning = false
+                ReplyService.stop(app)
+            }
+        }
+    }
+
+    fun stopClaudeCode() {
+        val app = getApplication<Application>()
+        ArinApp.scope.launch {
+            com.arin.claudecode.ClaudeCode.stopTurn(app)
+            ccJob?.cancel()
+            val idx = ccMessages.lastIndex
+            if (idx >= 0 && ccMessages[idx].running) ccMessages[idx] = ccMessages[idx].copy(running = false, text = ccMessages[idx].text.ifBlank { "Stopped." })
+            ccRunning = false
+            ReplyService.stop(app)
         }
     }
 
