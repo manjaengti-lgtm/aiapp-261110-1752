@@ -42,12 +42,20 @@ def to_openai(req):
         blocks = as_blocks(m.get("content"))
         if m.get("role") == "user":
             parts = []
+            tool_images = []
             for b in blocks:
                 t = b.get("type")
                 if t == "tool_result":
                     c = b.get("content")
                     if isinstance(c, list):
-                        c = block_text(c)
+                        # Images a tool returned (e.g. Claude Code reading a photo) can't go in a tool message:
+                        # send them right after, as a user message.
+                        for x in c:
+                            src = x.get("source", {}) if x.get("type") == "image" else {}
+                            if src.get("type") == "base64":
+                                tool_images.append({"type": "image_url", "image_url": {
+                                    "url": f"data:{src.get('media_type')};base64,{src.get('data')}"}})
+                        c = block_text(c) or ("[image]" if tool_images else "")
                     msgs.append({"role": "tool", "tool_call_id": b.get("tool_use_id"),
                                  "content": ("ERROR: " if b.get("is_error") else "") + (c or "")})
                 elif t == "text":
@@ -57,6 +65,8 @@ def to_openai(req):
                     if s.get("type") == "base64":
                         parts.append({"type": "image_url",
                                       "image_url": {"url": f"data:{s.get('media_type')};base64,{s.get('data')}"}})
+            if tool_images:
+                msgs.append({"role": "user", "content": [{"type": "text", "text": "The image from the tool result:"}] + tool_images})
             if parts:
                 if all(p["type"] == "text" for p in parts):
                     msgs.append({"role": "user", "content": "\n".join(p["text"] for p in parts)})

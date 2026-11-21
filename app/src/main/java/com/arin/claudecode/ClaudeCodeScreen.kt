@@ -29,6 +29,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Settings
@@ -213,14 +215,74 @@ private fun AssistantMessage(m: ChatViewModel.CcMessage) {
     }
 }
 
-/** The same message box as the chat tab. */
+/** The same message box as the chat tab, with + to attach photos, camera shots or any file. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun Composer(vm: ChatViewModel) {
     var text by rememberSaveable { mutableStateOf("") }
+    var attachMenu by rememberSaveable { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
-    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val pickFiles = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments(),
+    ) { vm.ccAttach(it) }
+    val pickPhotos = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia(10),
+    ) { vm.ccAttach(it) }
+    var cameraUri by androidx.compose.runtime.remember { mutableStateOf<android.net.Uri?>(null) }
+    val takePhoto = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.TakePicture(),
+    ) { saved ->
+        val uri = cameraUri
+        if (saved && uri != null) vm.ccAttach(listOf(uri))
+        cameraUri = null
+    }
+    fun openCamera() {
+        runCatching {
+            val dir = java.io.File(context.cacheDir, "exports").apply { mkdirs() }
+            val file = java.io.File(dir, "photo-${System.currentTimeMillis()}.jpg")
+            val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", file)
+            cameraUri = uri
+            takePhoto.launch(uri)
+        }.onFailure { vm.notice = "Couldn't open the camera." }
+    }
+
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+        // Files waiting to go with the next message.
+        if (vm.ccPending.isNotEmpty() || vm.ccAttaching) {
+            androidx.compose.foundation.layout.FlowRow(
+                Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                vm.ccPending.forEach { f ->
+                    androidx.compose.material3.InputChip(
+                        selected = false,
+                        onClick = { vm.ccRemovePending(f) },
+                        label = { Text("📎 " + f.name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 200.dp)) },
+                        trailingIcon = { Icon(Icons.Filled.Close, contentDescription = "Remove", modifier = Modifier.size(16.dp)) },
+                    )
+                }
+                if (vm.ccAttaching) CircularProgressIndicator(Modifier.size(18.dp).padding(top = 8.dp), strokeWidth = 2.dp)
+            }
+        }
         Surface(color = colors.surfaceContainerHigh, shape = RoundedCornerShape(28.dp)) {
             Row(Modifier.padding(6.dp), verticalAlignment = Alignment.Bottom) {
+                Box {
+                    IconButton(onClick = { attachMenu = true }, enabled = !vm.ccRunning) { Icon(Icons.Filled.Add, contentDescription = "Attach") }
+                    DropdownMenu(expanded = attachMenu, onDismissRequest = { attachMenu = false }) {
+                        DropdownMenuItem(text = { Text("Camera") }, onClick = { attachMenu = false; openCamera() })
+                        DropdownMenuItem(text = { Text("Photos") }, onClick = {
+                            attachMenu = false
+                            pickPhotos.launch(
+                                androidx.activity.result.PickVisualMediaRequest(
+                                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageAndVideo,
+                                ),
+                            )
+                        })
+                        DropdownMenuItem(text = { Text("Files (any type)") }, onClick = { attachMenu = false; pickFiles.launch(arrayOf("*/*")) })
+                    }
+                }
                 TextField(
                     value = text,
                     onValueChange = { text = it },
@@ -248,7 +310,7 @@ private fun Composer(vm: ChatViewModel) {
                 } else {
                     FilledIconButton(
                         onClick = { vm.askClaudeCode(text); text = "" },
-                        enabled = text.isNotBlank(),
+                        enabled = (text.isNotBlank() || vm.ccPending.isNotEmpty()) && !vm.ccAttaching,
                         shape = CircleShape,
                     ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", modifier = Modifier.size(20.dp)) }
                 }

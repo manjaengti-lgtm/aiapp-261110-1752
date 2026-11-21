@@ -770,13 +770,71 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         runCatching { ccChatFile.delete() }
     }
 
+    /** A file attached to the next Claude Code message: copied into Linux so Claude Code can open it. */
+    data class CcFile(val name: String, val path: String, val size: Long)
+
+    val ccPending = mutableStateListOf<CcFile>()
+    var ccAttaching by mutableStateOf(false)
+
+    /** Copy picked files/photos into /root/files/attachments (Claude Code works in /root/files). */
+    fun ccAttach(uris: List<android.net.Uri>) {
+        if (uris.isEmpty()) return
+        val app = getApplication<Application>()
+        ccAttaching = true
+        ArinApp.scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val dir = java.io.File(com.arin.terminal.Linux.rootfs(app), "root/files/attachments").apply { mkdirs() }
+                for (uri in uris) {
+                    runCatching {
+                        val cr = app.contentResolver
+                        var name = cr.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                            if (c.moveToFirst()) c.getString(0) else null
+                        } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "file"
+                        name = name.replace(Regex("[/\\\\:*?\"<>|\\u0000]"), "_").trim().ifBlank { "file" }
+                        if (!name.contains('.')) cr.getType(uri)?.let { t ->
+                            android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(t)?.let { name += ".$it" }
+                        }
+                        // Don't overwrite an earlier file with the same name.
+                        var target = java.io.File(dir, name)
+                        var n = 2
+                        while (target.exists()) {
+                            target = java.io.File(dir, name.substringBeforeLast('.') + "-$n" + (if (name.contains('.')) "." + name.substringAfterLast('.') else ""))
+                            n++
+                        }
+                        cr.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } }
+                        if (target.exists()) {
+                            val f = CcFile(target.name, "attachments/${target.name}", target.length())
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { ccPending += f }
+                        }
+                    }.onFailure { notice = "Couldn't attach a file: ${it.message}" }
+                }
+            } finally {
+                ccAttaching = false
+            }
+        }
+    }
+
+    fun ccRemovePending(f: CcFile) {
+        ccPending.remove(f)
+        runCatching { java.io.File(com.arin.terminal.Linux.rootfs(getApplication()), "root/files/${f.path}").delete() }
+    }
+
     /** Send a message. Follow-ups continue the same Claude Code conversation. */
     fun askClaudeCode(prompt: String) {
-        val text = prompt.trim()
-        if (ccRunning || text.isEmpty() || !ccSignedIn) return
+        val typed = prompt.trim()
+        val files = ccPending.toList()
+        if (ccRunning || (typed.isEmpty() && files.isEmpty()) || !ccSignedIn || ccAttaching) return
         val app = getApplication<Application>()
         val continueChat = ccMessages.any { !it.fromUser && !it.error }
-        ccMessages += CcMessage(true, text)
+        // Tell Claude Code where the attached files are (relative to its working folder, /root/files).
+        val text = if (files.isEmpty()) typed else buildString {
+            append(typed.ifEmpty { "Look at the attached file" + (if (files.size > 1) "s." else ".") })
+            append("\n\nAttached file").append(if (files.size > 1) "s" else "").append(" (open with the Read tool):\n")
+            files.forEach { append("- ").append(it.path).append('\n') }
+        }
+        ccPending.clear()
+        ccMessages += CcMessage(true, typed.ifEmpty { "(attached files)" } +
+            if (files.isEmpty()) "" else "\n" + files.joinToString("\n") { "📎 " + it.name })
         ccMessages += CcMessage(false, "", running = true)
         ccRunning = true
         val backend = if (ccBackend == "pro") com.arin.claudecode.ClaudeCode.Backend("pro", "", "", ccModel)
