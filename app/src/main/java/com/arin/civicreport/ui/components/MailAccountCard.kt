@@ -72,7 +72,7 @@ fun MailAccountCard(vm: ReportViewModel, startOpen: Boolean = false) {
         }
     }
 
-    fun current() = MailAccount(provider, email.trim(), password.replace(" ", ""), host.trim(), port.toIntOrNull() ?: 587, ssl)
+    fun current() = MailAccount(provider = provider, email = email.trim(), password = password.replace(" ", ""), host = host.trim(), port = port.toIntOrNull() ?: 587, ssl = ssl)
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
