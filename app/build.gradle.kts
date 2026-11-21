@@ -12,8 +12,10 @@
                 applicationId = "com.arin.civicreport"
                 minSdk = 26
                 targetSdk = 37
-                versionCode = 4
-                versionName = "1.3"
+                // The GitHub build number is the version, so the in-app updater can compare builds.
+                val build = (System.getenv("GITHUB_RUN_NUMBER") ?: "4").toInt()
+                versionCode = build
+                versionName = "1.3.$build"
             }
             signingConfigs {
                 // Created once by the workflow and kept in the repo, so every build installs over the last one.

@@ -164,6 +164,78 @@ class ReportViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearDraft() = _draft.update { DraftState() }
 
+    // ---------- app updates ----------
+
+    sealed interface UpdateState {
+        data object Idle : UpdateState
+        data object Checking : UpdateState
+        data object UpToDate : UpdateState
+        data class Available(val info: com.arin.civicreport.data.UpdateInfo) : UpdateState
+        data class Downloading(val info: com.arin.civicreport.data.UpdateInfo, val progress: Float) : UpdateState
+        data class Ready(val info: com.arin.civicreport.data.UpdateInfo, val file: java.io.File) : UpdateState
+        data class NeedsPermission(val info: com.arin.civicreport.data.UpdateInfo, val file: java.io.File) : UpdateState
+        data class Failed(val message: String, val info: com.arin.civicreport.data.UpdateInfo?) : UpdateState
+    }
+
+    val updater = container.updater
+    private val _update = MutableStateFlow<UpdateState>(UpdateState.Idle)
+    val update: StateFlow<UpdateState> = _update.asStateFlow()
+    private var downloadJob: kotlinx.coroutines.Job? = null
+
+    /** Looks for a newer build. Silent checks (at app start) stay quiet when up to date or offline. */
+    fun checkForUpdate(silent: Boolean) {
+        val now = _update.value
+        if (now is UpdateState.Checking || now is UpdateState.Downloading) return
+        if (!silent) _update.value = UpdateState.Checking
+        viewModelScope.launch {
+            _update.value = runCatching { updater.check() }.fold(
+                onSuccess = { info -> if (info != null) UpdateState.Available(info) else if (silent) UpdateState.Idle else UpdateState.UpToDate },
+                onFailure = { e -> if (silent) UpdateState.Idle else UpdateState.Failed(e.message ?: "Could not check for updates.", null) }
+            )
+        }
+    }
+
+    /** Downloads the update with progress, then opens the installer by itself. */
+    fun startUpdate() {
+        val info = when (val st = _update.value) {
+            is UpdateState.Available -> st.info
+            is UpdateState.Failed -> st.info ?: return
+            is UpdateState.Ready -> { installUpdate(); return }
+            is UpdateState.NeedsPermission -> { installUpdate(); return }
+            else -> return
+        }
+        downloadJob?.cancel()
+        _update.value = UpdateState.Downloading(info, 0f)
+        downloadJob = viewModelScope.launch {
+            runCatching { updater.download(info) { p -> _update.value = UpdateState.Downloading(info, p) } }
+                .onSuccess { file ->
+                    _update.value = UpdateState.Ready(info, file)
+                    installUpdate()
+                }
+                .onFailure { e ->
+                    if (e is kotlinx.coroutines.CancellationException) _update.value = UpdateState.Available(info)
+                    else _update.value = UpdateState.Failed(e.message ?: "Download failed.", info)
+                }
+        }
+    }
+
+    fun cancelUpdate() { downloadJob?.cancel() }
+
+    fun installUpdate() {
+        val (info, file) = when (val st = _update.value) {
+            is UpdateState.Ready -> st.info to st.file
+            is UpdateState.NeedsPermission -> st.info to st.file
+            else -> return
+        }
+        if (!updater.canInstall()) {
+            _update.value = UpdateState.NeedsPermission(info, file)
+            updater.openInstallPermission()
+            return
+        }
+        _update.value = UpdateState.Ready(info, file)
+        if (!updater.install(file)) _update.value = UpdateState.Failed("The installer could not be opened.", info)
+    }
+
     // ---------- saved photos and videos ----------
 
     val evidence = container.evidence

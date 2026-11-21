@@ -58,6 +58,7 @@ jobs:
         with:
           tag_name: duarbagori-${{ github.run_number }}
           name: Duarbagori Reports ${{ github.run_number }}
+          body: ${{ github.event.head_commit.message }}
           target_commitish: ${{ github.sha }}
           files: DuarbagoriReports-*.apk
           make_latest: false

@@ -118,6 +118,8 @@ fun SettingsScreen(vm: ReportViewModel, onBack: () -> Unit) {
                 }
             }
 
+            com.arin.civicreport.ui.components.UpdateCard(vm, alwaysShow = true)
+
             com.arin.civicreport.ui.components.MailAccountCard(vm)
 
             Card(Modifier.fillMaxWidth()) {

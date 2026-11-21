@@ -48,6 +48,9 @@ fun AppRoot() {
         }
     }
 
+    // Every user's app looks for a newer build once per launch; quiet if offline or up to date.
+    LaunchedEffect(Unit) { vm.checkForUpdate(silent = true) }
+
     if (!splashDone) {
         SplashScreen({ splashDone = true })
         return

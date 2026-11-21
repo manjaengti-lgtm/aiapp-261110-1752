@@ -122,6 +122,8 @@ fun HomeScreen(
                 }
             }
 
+            item { com.arin.civicreport.ui.components.UpdateCard(vm) }
+
             if (suggestions.isNotEmpty()) {
                 item {
                     Column {
