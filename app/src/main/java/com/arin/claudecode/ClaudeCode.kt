@@ -75,27 +75,40 @@ object ClaudeCode {
 
     /** Start the browser login in the background. Returns the current output (should hold the OAuth URL). */
     suspend fun startLogin(context: Context): String {
+        // `claude setup-token` only shows its sign-in link inside a terminal, so give it one with `script`.
+        // ('setup-[t]oken' so pkill doesn't match, and kill, this very command.)
         Shell.run(
             context,
-            "pkill -f 'claude setup-token' 2>/dev/null; rm -f $OUT $FIFO; mkfifo $FIFO; " +
+            "command -v script >/dev/null || apt-get install -y bsdutils >/dev/null 2>&1; " +
+                "pkill -f 'claude setup-[t]oken' 2>/dev/null; rm -f $OUT $FIFO; mkfifo $FIFO; " +
                 "( sleep 1800 > $FIFO & ) ; " +
-                "setsid bash -c 'claude setup-token < $FIFO > $OUT 2>&1' >/dev/null 2>&1 & echo started",
+                "setsid bash -c 'COLUMNS=500 LINES=40 TERM=xterm-256color DISABLE_AUTOUPDATER=1 " +
+                "script -qfc \"stty cols 500 rows 40 2>/dev/null; claude setup-token\" /dev/null < $FIFO > $OUT 2>&1' " +
+                ">/dev/null 2>&1 & echo started",
             60_000,
         )
-        delay(2800)
+        delay(3000)
         return loginOutput(context)
     }
 
+    /** The login's screen output as plain text (terminal colour and cursor codes removed). */
     suspend fun loginOutput(context: Context): String =
-        Shell.run(context, "cat $OUT 2>/dev/null", 30_000).stdout
+        plain(Shell.run(context, "cat $OUT 2>/dev/null", 30_000).stdout)
+
+    private fun plain(raw: String): String = raw
+        .replace(Regex("\u001B\\][^\u0007\u001B]*(\u0007|\u001B\\\\)"), " ")   // OSC (links, titles)
+        .replace(Regex("\u001B\\[[0-9;?>]*[ -/]*[@-~]"), " ")                       // CSI (colours, cursor moves)
+        .replace(Regex("\u001B[()][0-9A-Za-z]"), "")
+        .replace("\r", "")
 
     /** The OAuth URL printed by the login, if any. */
     fun urlIn(output: String): String? =
-        Regex("https://[\\w.-]*claude[\\w./?=&%+-]*", RegexOption.IGNORE_CASE).find(output)?.value
+        Regex("https://claude\\.ai/oauth/authorize\\S*").find(output)?.value
+            ?: Regex("https://[\\w.-]*(claude|anthropic)[\\w.-]*/[\\w./?=&%+~-]*oauth[\\w./?=&%+~-]*", RegexOption.IGNORE_CASE).find(output)?.value
 
     /** Feed the pasted code into the waiting login process. */
     suspend fun pasteCode(context: Context, code: String) {
-        Shell.run(context, "printf '%s\\n' '${esc(code.trim())}' > $FIFO 2>/dev/null; echo ok", 30_000)
+        Shell.run(context, "printf '%s\\r' '${esc(code.trim())}' > $FIFO 2>/dev/null; echo ok", 30_000)
     }
 
     /** Look for the one-year token in the login output and save it. Returns true if captured. */
@@ -115,7 +128,7 @@ object ClaudeCode {
     }
 
     suspend fun logout(context: Context) {
-        Shell.run(context, "rm -f $TOKEN_FILE; pkill -f 'claude setup-token' 2>/dev/null; echo ok", 60_000)
+        Shell.run(context, "rm -f $TOKEN_FILE; pkill -f 'claude setup-[t]oken' 2>/dev/null; echo ok", 60_000)
     }
 
     /**

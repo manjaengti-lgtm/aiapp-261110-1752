@@ -79,15 +79,20 @@ private fun ProLogin(vm: ChatViewModel) {
     }
     Text(
         "Uses your Claude Pro/Max plan — no API key, no extra billing. Sign in with the Google account your plan is on. " +
-            "A browser opens; the sign-in usually completes on its own. If it shows a code, paste it below.",
+            "Tap the button, open the sign-in page, and after signing in paste the code it shows.",
         style = small, color = colors.onSurfaceVariant,
     )
     Button(onClick = { vm.startCcLogin() }, enabled = !vm.ccBusy) { Text(if (vm.ccBusy) "Waiting for sign-in…" else "Sign in with Google (Claude)") }
+    if (vm.ccLoginStatus.isNotBlank()) {
+        val bad = vm.ccLoginStatus.contains("error", true) || vm.ccLoginStatus.contains("couldn't", true) ||
+            vm.ccLoginStatus.contains("invalid", true) || vm.ccLoginStatus.contains("failed", true)
+        Text(vm.ccLoginStatus, style = small, color = if (bad) colors.error else colors.onSurfaceVariant)
+    }
     vm.ccLoginUrl?.let { url ->
         OutlinedButton(onClick = { uri.openUri(url) }) { Text("Open sign-in page") }
         var code by rememberSaveable { mutableStateOf("") }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(code, { code = it }, placeholder = { Text("Paste code (only if shown)") }, singleLine = true, modifier = Modifier.weight(1f))
+            OutlinedTextField(code, { code = it }, placeholder = { Text("Paste the code from the sign-in page") }, singleLine = true, modifier = Modifier.weight(1f))
             Spacer(Modifier.width(8.dp))
             TextButton(enabled = code.isNotBlank(), onClick = { vm.pasteCcCode(code); code = "" }) { Text("Submit") }
         }

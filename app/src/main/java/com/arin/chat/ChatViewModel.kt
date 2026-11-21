@@ -524,27 +524,54 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** What the sign-in is doing right now (or the error it showed), for Settings. */
+    var ccLoginStatus by mutableStateOf("")
+
+    /** The last meaningful line Claude Code's sign-in screen shows (skips borders and spinners). */
+    private fun lastLoginLine(out: String): String =
+        out.lines().map { it.trim() }
+            .filter { line -> line.length > 3 && line.any { it.isLetter() } && !line.all { it in "─│╭╮╰╯ " } }
+            .lastOrNull().orEmpty().take(200)
+
     fun startCcLogin() {
         if (ccBusy) return
         val app = getApplication<Application>()
         ccBusy = true
         ccLoginUrl = null
+        ccLoginStatus = "Starting Claude Code's sign-in…"
         ArinApp.scope.launch {
             try {
-                val out = com.arin.claudecode.ClaudeCode.startLogin(app)
+                var out = com.arin.claudecode.ClaudeCode.startLogin(app)
+                // Claude Code starts slowly in Arin's Linux: keep looking for the link for up to a minute.
+                var tries = 0
                 ccLoginUrl = com.arin.claudecode.ClaudeCode.urlIn(out)
-                if (ccLoginUrl == null) notice = "Couldn't get the login link. Make sure Claude Code is installed."
-                // Poll for the token for a while (the browser redirect usually completes it on its own).
-                repeat(40) {
+                while (ccLoginUrl == null && tries++ < 30) {
+                    kotlinx.coroutines.delay(2000)
+                    out = com.arin.claudecode.ClaudeCode.loginOutput(app)
+                    ccLoginUrl = com.arin.claudecode.ClaudeCode.urlIn(out)
+                }
+                if (ccLoginUrl == null) {
+                    ccLoginStatus = "Couldn't get the sign-in link. " + lastLoginLine(out).ifBlank { "Is Claude Code installed?" }
+                    return@launch
+                }
+                ccLoginStatus = "Open the sign-in page, sign in with Google, then copy the code it shows and paste it here."
+                // Wait for the code to be pasted and the token to appear (up to 15 minutes).
+                repeat(300) {
                     kotlinx.coroutines.delay(3000)
+                    out = com.arin.claudecode.ClaudeCode.loginOutput(app)
                     if (com.arin.claudecode.ClaudeCode.captureToken(app)) {
                         ccConnected = true
-                        notice = "Connected to Claude Code ✓"
+                        ccLoginUrl = null
+                        ccLoginStatus = ""
+                        notice = "Signed in to Claude Code ✓"
                         return@launch
                     }
+                    val line = lastLoginLine(out)
+                    if (line.contains("error", true) || line.contains("invalid", true) || line.contains("failed", true)) ccLoginStatus = line
                 }
+                ccLoginStatus = "Sign-in timed out. Tap the button to try again."
             } catch (e: Exception) {
-                notice = "Login error: ${e.message}"
+                ccLoginStatus = "Sign-in error: ${e.message}"
             } finally {
                 ccBusy = false
             }
@@ -553,17 +580,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun pasteCcCode(code: String) {
         val app = getApplication<Application>()
-        ArinApp.scope.launch {
-            com.arin.claudecode.ClaudeCode.pasteCode(app, code)
-            repeat(10) {
-                kotlinx.coroutines.delay(2000)
-                if (com.arin.claudecode.ClaudeCode.captureToken(app)) {
-                    ccConnected = true
-                    notice = "Connected to Claude Code ✓"
-                    return@launch
-                }
-            }
-        }
+        ccLoginStatus = "Checking the code…"
+        ArinApp.scope.launch { com.arin.claudecode.ClaudeCode.pasteCode(app, code) }
     }
 
     fun saveCcToken(token: String) {
