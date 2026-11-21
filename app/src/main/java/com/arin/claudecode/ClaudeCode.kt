@@ -52,19 +52,19 @@ object ClaudeCode {
               rm -rf /tmp/cc && mkdir -p /tmp/cc
               if curl -fL --retry 3 --retry-delay 3 -sS "https://registry.npmjs.org/@anthropic-ai/claude-code-${'$'}P/-/claude-code-${'$'}P-${'$'}V.tgz" \
                    | tar -xz -C /tmp/cc package/claude; then
-                install -m 755 /tmp/cc/package/claude /usr/local/bin/claude && ok=1
+                mkdir -p /usr/local/lib/arin-claude && install -m 755 /tmp/cc/package/claude /usr/local/lib/arin-claude/claude && ok=1
               fi
               rm -rf /tmp/cc
             fi
             if [ "${'$'}ok" != 1 ]; then
               echo "Registry download failed — trying Anthropic's installer…"
               curl -fsSL https://claude.ai/install.sh | bash 2>&1 | tail -n 5
-              [ -x /root/.local/bin/claude ] && ln -sf /root/.local/bin/claude /usr/local/bin/claude
+              [ -x /root/.local/bin/claude ] && mkdir -p /usr/local/lib/arin-claude && ln -sf /root/.local/bin/claude /usr/local/lib/arin-claude/claude
             fi
             # Remove a broken npm attempt so it can't shadow the working binary.
             rm -f /usr/local/lib/node_modules/.bin/claude 2>/dev/null
             apt-get install -y ripgrep python3 >/dev/null 2>&1 || true
-            if claude --version 2>&1 | head -n 2; then echo ARIN_OK; else echo ARIN_FAIL; fi
+            if /usr/local/lib/arin-claude/claude --version 2>&1 | head -n 2; then echo ARIN_OK; else echo ARIN_FAIL; fi
         """.trimIndent()
         val r = Shell.run(context, script, timeoutMs = 25 * 60_000L)
         r.stdout.lines().filter { it.isNotBlank() && !it.contains("ARIN_OK") && !it.contains("ARIN_FAIL") }
@@ -270,6 +270,100 @@ object ClaudeCode {
             if (chatSays.isNotBlank()) "The API refused a test message — $chatSays"
             else "Couldn't find a chat endpoint at this URL. Try the base URL ending in /v1.",
         )
+    }
+
+    // ---------- the `claude` command in Arin's Linux uses the same brain ----------
+
+    private const val REAL_BIN = "/usr/local/lib/arin-claude/claude"
+    private const val BRIDGE_ENV = "/root/.arin/cc-bridge.env"
+
+    /** `claude` in the terminal: starts Arin's bridge when the brain is an OpenAI-style API, then runs Claude Code. */
+    private val WRAPPER = """
+        #!/bin/bash
+        # ARIN_WRAPPER — written by Arin. Your brain (API and model) is set in Arin: Settings → Claude Code.
+        if [ -f $BRIDGE_ENV ] && ! curl -s -m 2 http://127.0.0.1:8787/health >/dev/null 2>&1; then
+          ( set -a; . $BRIDGE_ENV; set +a; setsid python3 /root/.arin/cc-bridge.py >/dev/null 2>&1 & )
+          for i in 1 2 3 4 5 6 7 8 9 10; do curl -s -m 1 http://127.0.0.1:8787/health >/dev/null 2>&1 && break; sleep 0.3; done
+        fi
+        exec $REAL_BIN "${'$'}@"
+    """.trimIndent() + "\n"
+
+    /** Every setting Arin manages in Claude Code's settings.json (others the person set are kept). */
+    private val OWNED_ENV = listOf(
+        "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        "CLAUDE_CODE_SUBAGENT_MODEL", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+        "DISABLE_AUTOUPDATER", "DISABLE_TELEMETRY", "DISABLE_ERROR_REPORTING",
+    )
+
+    /**
+     * Make the `claude` command in Arin's Linux use the brain chosen in Settings, exactly like the Claude Code tab:
+     * writes ~/.claude/settings.json (which Claude Code reads on every start), the bridge config for OpenAI-style
+     * APIs, and the `claude` launcher. [b] null = signed out (Arin's settings are removed).
+     */
+    suspend fun applyLinuxConfig(context: Context, b: Backend?) {
+        val root = com.arin.terminal.Linux.rootfs(context)
+        if (!java.io.File(root, "bin").exists()) return
+
+        // 1. The launcher in front of the real program (moves an older install aside once).
+        Shell.run(
+            context,
+            "mkdir -p /usr/local/lib/arin-claude /root/.arin /root/.claude; " +
+                "if [ -e /usr/local/bin/claude ] && ! head -c 300 /usr/local/bin/claude | grep -q ARIN_WRAPPER; then " +
+                "mv -f /usr/local/bin/claude $REAL_BIN; fi; echo ok",
+            60_000,
+        )
+        java.io.File(root, "root/.arin").mkdirs()
+        context.assets.open("cc-bridge.py").use { input -> java.io.File(root, "root/.arin/cc-bridge.py").outputStream().use { input.copyTo(it) } }
+        if (java.io.File(root, REAL_BIN.removePrefix("/")).exists() || java.io.File(root, "root/.local/bin/claude").exists()) {
+            java.io.File(root, "usr/local/bin/claude").apply { writeText(WRAPPER); setExecutable(true, false) }
+        }
+
+        // 2. Claude Code's own settings: the env block it applies on every start.
+        val settingsFile = java.io.File(root, "root/.claude/settings.json").apply { parentFile?.mkdirs() }
+        val settings = runCatching { org.json.JSONObject(settingsFile.readText()) }.getOrElse { org.json.JSONObject() }
+        val env = settings.optJSONObject("env") ?: org.json.JSONObject()
+        OWNED_ENV.forEach { env.remove(it) }
+        val quiet = mapOf("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" to "1", "DISABLE_AUTOUPDATER" to "1", "DISABLE_TELEMETRY" to "1", "DISABLE_ERROR_REPORTING" to "1")
+        fun models(m: String) = listOf("ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL").associateWith { m }
+        val bridgeEnv = java.io.File(root, BRIDGE_ENV.removePrefix("/"))
+        val bridgeBefore = runCatching { bridgeEnv.readText() }.getOrDefault("")
+        when (b?.kind) {
+            "pro" -> {
+                val token = runCatching { java.io.File(root, TOKEN_FILE.removePrefix("/")).readText().trim() }.getOrDefault("")
+                if (token.isNotEmpty()) env.put("CLAUDE_CODE_OAUTH_TOKEN", token)
+                if (b.model.isNotBlank()) env.put("ANTHROPIC_MODEL", b.model)
+                env.put("DISABLE_AUTOUPDATER", "1")
+                bridgeEnv.delete()
+            }
+            "openai" -> {
+                (mapOf("ANTHROPIC_BASE_URL" to "http://127.0.0.1:$BRIDGE_PORT", "ANTHROPIC_AUTH_TOKEN" to "arin-bridge") + models(b.model) + quiet)
+                    .forEach { (k, v) -> env.put(k, v) }
+                bridgeEnv.writeText(
+                    "ARIN_UPSTREAM='${esc(b.base)}'\nARIN_KEY='${esc(b.key)}'\nARIN_PORT=$BRIDGE_PORT\n",
+                )
+                bridgeEnv.setReadable(false, false); bridgeEnv.setReadable(true, true)
+            }
+            "anthropic" -> {
+                (mapOf("ANTHROPIC_BASE_URL" to b.base, "ANTHROPIC_AUTH_TOKEN" to b.key) + models(b.model) + quiet)
+                    .forEach { (k, v) -> env.put(k, v) }
+                bridgeEnv.delete()
+            }
+            else -> bridgeEnv.delete()
+        }
+        settings.put("env", env)
+        settingsFile.writeText(settings.toString(2))
+
+        // 3. Skip the first-run sign-in/theme screens: Arin has already set up the brain.
+        val state = java.io.File(root, "root/.claude.json")
+        val st = runCatching { org.json.JSONObject(state.readText()) }.getOrElse { org.json.JSONObject() }
+        if (b != null) st.put("hasCompletedOnboarding", true)
+        state.writeText(st.toString(2))
+
+        // 4. Restart the bridge only if its API or key changed (so a running reply isn't cut off).
+        val bridgeAfter = runCatching { bridgeEnv.readText() }.getOrDefault("")
+        if (bridgeAfter != bridgeBefore) Shell.run(context, "pkill -f 'cc-[b]ridge.py' 2>/dev/null; echo ok", 30_000)
     }
 
     // ---------- the local bridge (Anthropic format -> OpenAI format) ----------

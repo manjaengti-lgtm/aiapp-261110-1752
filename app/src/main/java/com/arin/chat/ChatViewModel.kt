@@ -499,6 +499,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             loadCcChat()
             ccInstalled = com.arin.terminal.Linux.installed(app) && com.arin.claudecode.ClaudeCode.installed(app)
             ccConnected = ccInstalled && com.arin.claudecode.ClaudeCode.connected(app)
+            if (ccInstalled && !ccRunning) applyCcLinux()
         }
     }
 
@@ -515,7 +516,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 val err = com.arin.claudecode.ClaudeCode.install(app) { ccLogLine(it) }
                 ccInstalled = com.arin.claudecode.ClaudeCode.installed(app)
-                if (err != null) notice = err
+                if (err != null) notice = err else applyCcLinux()
             } catch (e: Exception) {
                 notice = "Claude Code install failed: ${e.message}"
             } finally {
@@ -563,6 +564,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         ccConnected = true
                         ccLoginUrl = null
                         ccLoginStatus = ""
+                        applyCcLinux()
                         notice = "Signed in to Claude Code ✓"
                         return@launch
                     }
@@ -588,6 +590,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val app = getApplication<Application>()
         ArinApp.scope.launch {
             ccConnected = com.arin.claudecode.ClaudeCode.saveToken(app, token)
+            if (ccConnected) applyCcLinux()
             notice = if (ccConnected) "Connected to Claude Code ✓" else "That didn't look like a valid token."
         }
     }
@@ -597,6 +600,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         ArinApp.scope.launch {
             com.arin.claudecode.ClaudeCode.logout(app)
             ccConnected = false
+            applyCcLinux()
         }
     }
 
@@ -627,10 +631,23 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     var ccRunning by mutableStateOf(false)
     private var ccJob: kotlinx.coroutines.Job? = null
 
+    /** Keep the `claude` command in Arin's Linux on the same brain as the Claude Code tab. */
+    private fun applyCcLinux() {
+        val app = getApplication<Application>()
+        val b = when {
+            ccBackend == "pro" && ccConnected -> com.arin.claudecode.ClaudeCode.Backend("pro", "", "", ccProModelState)
+            ccBackend == "custom" && ccCustomReady ->
+                com.arin.claudecode.ClaudeCode.Backend(settings.ccCustomKind, settings.ccCustomBase, settings.ccCustomKey, ccCustomModelState)
+            else -> null
+        }
+        ArinApp.scope.launch { runCatching { com.arin.claudecode.ClaudeCode.applyLinuxConfig(app, b) } }
+    }
+
     fun chooseCcBackend(kind: String) {
         if (ccRunning) return
         ccBackend = kind
         settings.ccBackend = kind
+        applyCcLinux()
     }
 
     /** The API wouldn't list its models, so Settings asks for the model id. */
@@ -677,11 +694,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun disconnectCcApi() {
         settings.ccCustomKey = ""
         ccCustomReady = false
+        applyCcLinux()
     }
 
     fun selectCcModel(id: String) {
         if (ccBackend == "pro") { ccProModelState = id; settings.ccProModel = id }
         else { ccCustomModelState = id; settings.ccCustomModel = id }
+        applyCcLinux()
     }
 
     private val ccChatFile get() = java.io.File(getApplication<Application>().filesDir, "claude_code_chat.json")
