@@ -104,7 +104,11 @@ class NeuralVoice(private val cacheDir: File) {
     private fun pollinationsRequest(text: String): Request {
         val t = text.take(900)
         val url = "https://text.pollinations.ai/" + URLEncoder.encode(t, "UTF-8") + "?model=openai-audio&voice=" + voice
-        return Request.Builder().url(url).header("User-Agent", "Arin-Android").build()
+        // A referrer gives the free tier a steadier rate limit than fully anonymous requests.
+        return Request.Builder().url(url)
+            .header("User-Agent", "Arin-Android")
+            .header("Referer", "https://arin.app")
+            .build()
     }
 
     /** The ChatGPT voice engine: gpt-4o-mini-tts with an emotion-steering instruction. */

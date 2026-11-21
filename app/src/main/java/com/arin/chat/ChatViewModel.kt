@@ -210,6 +210,29 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** True while the voice screen is open: replies are spoken aloud, so answer conversationally. */
     var voiceMode = false
 
+    private var voicePreview: com.arin.voice.NeuralVoice? = null
+
+    /** Speak a one-line sample in the currently chosen voice engine, so the person can hear it from Settings. */
+    fun previewVoice() {
+        runCatching { voicePreview?.close() }
+        val nv = com.arin.voice.NeuralVoice(app.cacheDir)
+        nv.voice = settings.voiceName
+        if (settings.voiceEngine == "openai" && settings.voiceKey.isNotBlank()) {
+            nv.engine = com.arin.voice.NeuralVoice.Engine.OpenAI
+            nv.apiKey = settings.voiceKey
+        }
+        voicePreview = nv
+        nv.start(
+            onClipDone = {
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    if (voicePreview === nv) { runCatching { nv.close() }; voicePreview = null }
+                }, 400)
+            },
+            onFallback = {},
+        )
+        nv.speak("Hey! This is the voice I'll use when we talk. How do I sound?")
+    }
+
     fun saveCustomInstructions(about: String, how: String) {
         aboutYou = about.trim()
         howToAnswer = how.trim()

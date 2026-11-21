@@ -192,19 +192,24 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
                 ) { natural = it; vm.settings.voiceNatural = it }
                 if (natural) {
                     var engine by remember { mutableStateOf(vm.settings.voiceEngine) }
-                    Text("Voice engine", style = MaterialTheme.typography.bodyLarge)
+                    Text("ChatGPT voice", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Both options use the real ChatGPT voices. Your chat still runs on whichever model/API you picked — this only changes the voice.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     androidx.compose.foundation.layout.FlowRow(
                         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
                     ) {
                         androidx.compose.material3.FilterChip(
                             selected = engine == "free",
                             onClick = { engine = "free"; vm.settings.voiceEngine = "free" },
-                            label = { Text("Free (keyless)") },
+                            label = { Text("Free · no key") },
                         )
                         androidx.compose.material3.FilterChip(
                             selected = engine == "openai",
                             onClick = { engine = "openai"; vm.settings.voiceEngine = "openai" },
-                            label = { Text("ChatGPT (OpenAI key)") },
+                            label = { Text("OpenAI key · more expressive") },
                         )
                     }
                     if (engine == "openai") {
@@ -239,6 +244,7 @@ fun SettingsScreen(vm: ChatViewModel, onBack: () -> Unit) {
                             )
                         }
                     }
+                    TextButton(onClick = { vm.previewVoice() }) { Text("▶  Preview voice") }
                 }
             }
 
