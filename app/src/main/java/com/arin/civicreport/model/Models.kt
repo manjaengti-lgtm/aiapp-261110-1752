@@ -172,7 +172,7 @@ data class Report(
     val sentChannels: List<String> = emptyList(),
     val mapSnapshot: String = ""
 ) {
-    val title: String get() = types.joinToString(", ") { it.shortLabel }
+    val title: String get() = types.joinToString(", ") { it.shortLabel }.ifBlank { "Untitled draft" }
     val primaryType: IncidentType? get() = types.firstOrNull()
 }
 
@@ -187,7 +187,9 @@ data class AppSettings(
     val senderEmail: String = "",
     val senderPhone: String = "",
     val highAccuracy: Boolean = true,
-    val includeNationalAuthorities: Boolean = true
+    val includeNationalAuthorities: Boolean = true,
+    /** Also keep a copy of every photo and video in the phone's gallery. */
+    val saveToGallery: Boolean = true
 )
 
 enum class SendChannel(val label: String) { EMAIL("Email"), SMS("SMS"), BOTH("Email and SMS") }

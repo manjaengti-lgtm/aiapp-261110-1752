@@ -31,7 +31,13 @@ class MediaStore(private val context: Context) {
     /** Copies picked gallery content into the app folder so the URI never expires. */
     suspend fun import(uri: Uri): String? = withContext(Dispatchers.IO) {
         runCatching {
-            val target = File(mediaDir(), "import_${System.currentTimeMillis()}.jpg")
+            val mime = context.contentResolver.getType(uri).orEmpty()
+            val ext = when {
+                mime.startsWith("video/") -> "mp4"
+                mime == "image/png" -> "png"
+                else -> "jpg"
+            }
+            val target = File(mediaDir(), "import_${System.currentTimeMillis()}.$ext")
             context.contentResolver.openInputStream(uri)?.use { input ->
                 target.outputStream().use { output -> input.copyTo(output) }
             }

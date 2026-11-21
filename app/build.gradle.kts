@@ -12,8 +12,8 @@
                 applicationId = "com.arin.civicreport"
                 minSdk = 26
                 targetSdk = 37
-                versionCode = 3
-                versionName = "1.2"
+                versionCode = 4
+                versionName = "1.3"
             }
             signingConfigs {
                 // Created once by the workflow and kept in the repo, so every build installs over the last one.

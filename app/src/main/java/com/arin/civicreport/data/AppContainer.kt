@@ -14,4 +14,5 @@ class AppContainer(context: Context) {
     val detector: ActivityDetector by lazy { ActivityDetector(app) }
     val notifications: NotificationHelper by lazy { NotificationHelper(app) }
     val media: MediaStore by lazy { MediaStore(app) }
+    val evidence: EvidenceStore by lazy { EvidenceStore(app) }
 }

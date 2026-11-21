@@ -22,6 +22,7 @@ class SettingsStore(private val context: Context) {
         val senderPhone = stringPreferencesKey("sender_phone")
         val highAccuracy = booleanPreferencesKey("high_accuracy")
         val national = booleanPreferencesKey("include_national")
+        val gallery = booleanPreferencesKey("save_to_gallery")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { p ->
@@ -33,7 +34,8 @@ class SettingsStore(private val context: Context) {
             senderEmail = p[Keys.senderEmail].orEmpty(),
             senderPhone = p[Keys.senderPhone].orEmpty(),
             highAccuracy = p[Keys.highAccuracy] ?: true,
-            includeNationalAuthorities = p[Keys.national] ?: true
+            includeNationalAuthorities = p[Keys.national] ?: true,
+            saveToGallery = p[Keys.gallery] ?: true
         )
     }
 
@@ -47,7 +49,8 @@ class SettingsStore(private val context: Context) {
                 senderEmail = p[Keys.senderEmail].orEmpty(),
                 senderPhone = p[Keys.senderPhone].orEmpty(),
                 highAccuracy = p[Keys.highAccuracy] ?: true,
-                includeNationalAuthorities = p[Keys.national] ?: true
+                includeNationalAuthorities = p[Keys.national] ?: true,
+                saveToGallery = p[Keys.gallery] ?: true
             )
             val next = transform(current)
             p[Keys.channel] = next.defaultChannel.name
@@ -57,6 +60,7 @@ class SettingsStore(private val context: Context) {
             p[Keys.senderPhone] = next.senderPhone
             p[Keys.highAccuracy] = next.highAccuracy
             p[Keys.national] = next.includeNationalAuthorities
+            p[Keys.gallery] = next.saveToGallery
         }
     }
 }

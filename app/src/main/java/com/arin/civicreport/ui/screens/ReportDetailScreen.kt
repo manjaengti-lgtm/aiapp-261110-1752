@@ -48,7 +48,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.material3.Icon
 
 @Composable
-fun ReportDetailScreen(vm: ReportViewModel, reportId: String, onBack: () -> Unit) {
+fun ReportDetailScreen(vm: ReportViewModel, reportId: String, onBack: () -> Unit, onContinueDraft: () -> Unit = {}) {
     val reports by vm.reports.collectAsStateWithLifecycle()
     val report = reports.firstOrNull { it.id == reportId }
     val context = LocalContext.current
@@ -223,7 +223,10 @@ fun ReportDetailScreen(vm: ReportViewModel, reportId: String, onBack: () -> Unit
                 }
             }
 
-            Button(
+            if (report.status == com.arin.civicreport.model.ReportStatus.DRAFT) Button(
+                onClick = { vm.loadDraft(report); onContinueDraft() },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Continue this draft") } else Button(
                 onClick = {
                     scope.launch {
                         val ok = vm.resend(report)

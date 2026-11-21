@@ -41,7 +41,9 @@ data class DraftState(
     val locating: Boolean = false,
     val locationError: String? = null,
     val searchingAuthorities: Boolean = false,
-    val loadError: String? = null
+    val loadError: String? = null,
+    /** Set once the draft has been saved, so saving again updates the same complaint. */
+    val draftId: String? = null
 ) {
     val canContinue: Boolean get() = types.isNotEmpty() && location.hasFix
 }
@@ -93,13 +95,14 @@ class ReportViewModel(app: Application) : AndroidViewModel(app) {
     fun addPhoto(path: String) = _draft.update { it.copy(photos = it.photos + path) }
 
     fun removePhoto(path: String) {
-        mediaStore.deleteFile(path)
+        // Saved evidence stays in "Saved photos & videos"; only private copies are deleted.
+        if (!evidence.contains(path)) mediaStore.deleteFile(path)
         _draft.update { it.copy(photos = it.photos.filterNot { p -> p == path }) }
     }
 
     fun setVideo(path: String?) {
         _draft.update { d ->
-            d.video?.let { old -> if (old != path) mediaStore.deleteFile(old) }
+            d.video?.let { old -> if (old != path && !evidence.contains(old)) mediaStore.deleteFile(old) }
             d.copy(video = path)
         }
     }
@@ -112,6 +115,13 @@ class ReportViewModel(app: Application) : AndroidViewModel(app) {
             val known = d.attachments.map { it.uri }.toSet()
             d.copy(attachments = d.attachments + added.filter { it.uri !in known })
         }
+    }
+
+    /** Adds a file already copied into the app (for example a second video) as an attachment. */
+    fun addLocalFile(path: String, mime: String) {
+        val f = java.io.File(path)
+        val a = Attachment(uri = mediaStore.uriFor(f).toString(), name = f.name, mimeType = mime, sizeBytes = f.length())
+        _draft.update { d -> if (d.attachments.any { it.uri == a.uri }) d else d.copy(attachments = d.attachments + a) }
     }
 
     fun removeAttachment(attachment: Attachment) {
@@ -153,6 +163,134 @@ class ReportViewModel(app: Application) : AndroidViewModel(app) {
     fun updateLocation(location: ReportLocation) = _draft.update { it.copy(location = location) }
 
     fun clearDraft() = _draft.update { DraftState() }
+
+    // ---------- saved photos and videos ----------
+
+    val evidence = container.evidence
+    val evidenceItems: StateFlow<List<com.arin.civicreport.data.EvidenceItem>> = evidence.items
+
+    private val _quickFix = MutableStateFlow(ReportLocation())
+    /** Location used by the quick-capture screen, which works before any complaint is started. */
+    val quickFix: StateFlow<ReportLocation> = _quickFix.asStateFlow()
+    private val _quickLocating = MutableStateFlow(false)
+    val quickLocating: StateFlow<Boolean> = _quickLocating.asStateFlow()
+
+    fun locateForCapture() {
+        if (_quickLocating.value) return
+        _quickLocating.value = true
+        viewModelScope.launch {
+            val pos = locationHelper.currentPosition(settings.value.highAccuracy)
+            if (pos != null) {
+                _quickFix.value = ReportLocation(pos.latitude, pos.longitude, pos.accuracy)
+                _quickFix.value = locationHelper.reverseGeocode(pos.latitude, pos.longitude).copy(accuracy = pos.accuracy)
+            }
+            _quickLocating.value = false
+        }
+    }
+
+    suspend fun saveCapturedPhoto(file: java.io.File, loc: ReportLocation) =
+        evidence.addPhoto(file, loc, settings.value.saveToGallery)
+
+    suspend fun saveCapturedVideo(file: java.io.File, loc: ReportLocation, startedAt: Long) =
+        evidence.addVideo(file, loc, startedAt, settings.value.saveToGallery)
+
+    /**
+     * Puts saved photos and videos into the complaint. The place where they were taken
+     * becomes the complaint's location, so drafting later at home still reports the right spot.
+     * Returns true when the location was taken from the evidence.
+     */
+    fun useEvidence(items: List<com.arin.civicreport.data.EvidenceItem>): Boolean {
+        if (items.isEmpty()) return false
+        val photos = items.filter { !it.isVideo }.map { it.path }
+        val videos = items.filter { it.isVideo }.map { it.path }
+        _draft.update { d ->
+            val firstVideo = d.video ?: videos.firstOrNull()
+            val extraVideos = videos.filter { it != firstVideo }
+                .map { path ->
+                    val f = java.io.File(path)
+                    Attachment(
+                        uri = mediaStore.uriFor(f).toString(),
+                        name = f.name,
+                        mimeType = "video/mp4",
+                        sizeBytes = f.length()
+                    )
+                }
+            val knownAtt = d.attachments.map { it.uri }.toSet()
+            d.copy(
+                photos = (d.photos + photos).distinct(),
+                video = firstVideo,
+                attachments = d.attachments + extraVideos.filter { it.uri !in knownAtt }
+            )
+        }
+        val located = items.firstOrNull { it.hasLocation } ?: return false
+        val here = _draft.value.location
+        val sameSpot = here.hasFix &&
+            kotlin.math.abs(here.latitude - located.latitude) < 0.0005 &&
+            kotlin.math.abs(here.longitude - located.longitude) < 0.0005
+        if (!sameSpot) {
+            _draft.update {
+                it.copy(location = ReportLocation(located.latitude, located.longitude, located.accuracy, address = located.address))
+            }
+            refineLocation(located.latitude, located.longitude)
+            _draft.update { it.copy(location = it.location.copy(accuracy = located.accuracy)) }
+        }
+        return true
+    }
+
+    fun deleteEvidence(items: List<com.arin.civicreport.data.EvidenceItem>, alsoFromGallery: Boolean) {
+        val paths = items.map { it.path }.toSet()
+        _draft.update { d ->
+            d.copy(
+                photos = d.photos.filterNot { it in paths },
+                video = d.video?.takeIf { it !in paths },
+                attachments = d.attachments.filterNot { a -> paths.any { p -> a.uri.endsWith(java.io.File(p).name) } }
+            )
+        }
+        viewModelScope.launch { evidence.delete(items, alsoFromGallery) }
+    }
+
+    // ---------- drafts ----------
+
+    /** Saves whatever has been gathered so far, even without a problem type or offices. */
+    suspend fun saveDraft(): Report {
+        val d = _draft.value
+        val id = d.draftId ?: UUID.randomUUID().toString()
+        val existing = reports.value.firstOrNull { it.id == id }
+        val channel = settings.value.defaultChannel
+        val report = Report(
+            id = id,
+            types = d.types.toList(),
+            createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+            location = d.location,
+            notes = d.notes.trim(),
+            mediaUris = d.photos,
+            videoUri = d.video,
+            attachments = d.attachments,
+            authorities = d.authorities.filter { it.id in d.selectedAuthorityIds },
+            sendEmail = channel != SendChannel.SMS,
+            sendSms = channel != SendChannel.EMAIL,
+            status = ReportStatus.DRAFT
+        )
+        container.reports.upsert(report)
+        _draft.update { it.copy(draftId = id) }
+        return report
+    }
+
+    /** Opens a saved draft so it can be finished and sent. */
+    fun loadDraft(report: Report) {
+        _draft.value = DraftState(
+            types = report.types.toSet(),
+            location = report.location,
+            notes = report.notes,
+            photos = report.mediaUris.filter { java.io.File(it).exists() },
+            video = report.videoUri?.takeIf { java.io.File(it).exists() },
+            attachments = report.attachments,
+            customAuthorities = report.authorities.filter { it.custom },
+            selectedAuthorityIds = report.authorities.map { it.id }.toSet(),
+            draftId = report.id
+        )
+        if (report.types.isNotEmpty() && report.location.hasFix) runAuthoritySearch()
+    }
 
     fun clearSendResult() {
         _sendResult.value = null
@@ -243,7 +381,7 @@ class ReportViewModel(app: Application) : AndroidViewModel(app) {
         val selected = d.authorities.filter { it.id in d.selectedAuthorityIds }
         val channel = settings.value.defaultChannel
         return Report(
-            id = UUID.randomUUID().toString(),
+            id = d.draftId ?: UUID.randomUUID().toString(),
             types = d.types.toList(),
             createdAt = System.currentTimeMillis(),
             location = d.location,
@@ -362,8 +500,9 @@ class ReportViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deleteReport(report: Report) {
-        report.mediaUris.forEach { mediaStore.deleteFile(it) }
-        report.videoUri?.let { mediaStore.deleteFile(it) }
+        // Photos and videos in "Saved photos & videos" are kept; delete them there.
+        report.mediaUris.filterNot { evidence.contains(it) }.forEach { mediaStore.deleteFile(it) }
+        report.videoUri?.takeIf { !evidence.contains(it) }?.let { mediaStore.deleteFile(it) }
         report.attachments.forEach { mediaStore.release(it) }
         viewModelScope.launch { container.reports.delete(report.id) }
     }

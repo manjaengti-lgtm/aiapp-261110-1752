@@ -8,6 +8,7 @@ object Routes {
     const val COMPOSE = "compose"
     const val REPORTS = "reports"
     const val SETTINGS = "settings"
+    const val EVIDENCE = "evidence"
     const val REPORT_DETAIL = "report/{reportId}"
 
     fun reportDetail(id: String) = "report/$id"

@@ -31,7 +31,7 @@ import com.arin.civicreport.viewmodel.ReportViewModel
 import kotlinx.coroutines.launch
 
 @Composable
-fun ReportsScreen(vm: ReportViewModel, onBack: () -> Unit, onOpenReport: (String) -> Unit) {
+fun ReportsScreen(vm: ReportViewModel, onBack: () -> Unit, onOpenReport: (String) -> Unit, onContinueDraft: () -> Unit = {}) {
     val reports by vm.reports.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -94,7 +94,10 @@ fun ReportsScreen(vm: ReportViewModel, onBack: () -> Unit, onOpenReport: (String
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.End
                             ) {
-                                TextButton(onClick = {
+                                if (report.status == com.arin.civicreport.model.ReportStatus.DRAFT) TextButton(onClick = {
+                                    vm.loadDraft(report)
+                                    onContinueDraft()
+                                }) { Text("Continue") } else TextButton(onClick = {
                                     scope.launch {
                                         val ok = vm.resend(report)
                                         snackbar.showSnackbar(

@@ -65,6 +65,7 @@ fun AppRoot() {
                 },
                 onReports = { navController.navigate(Routes.REPORTS) },
                 onSettings = { navController.navigate(Routes.SETTINGS) },
+                onEvidence = { navController.navigate(Routes.EVIDENCE) },
                 onOpenReport = { id -> navController.navigate(Routes.reportDetail(id)) }
             )
         }
@@ -107,7 +108,16 @@ fun AppRoot() {
             ReportsScreen(
                 vm = vm,
                 onBack = { navController.popBackStack() },
-                onOpenReport = { id -> navController.navigate(Routes.reportDetail(id)) }
+                onOpenReport = { id -> navController.navigate(Routes.reportDetail(id)) },
+                onContinueDraft = { navController.navigate(draftRoute(vm)) }
+            )
+        }
+
+        composable(Routes.EVIDENCE) {
+            com.arin.civicreport.ui.screens.EvidenceScreen(
+                vm = vm,
+                onBack = { navController.popBackStack() },
+                onStartComplaint = { navController.navigate(Routes.TYPES) }
             )
         }
 
@@ -118,7 +128,8 @@ fun AppRoot() {
             ReportDetailScreen(
                 vm = vm,
                 reportId = entry.arguments?.getString("reportId").orEmpty(),
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onContinueDraft = { navController.navigate(draftRoute(vm)) }
             )
         }
 
@@ -127,6 +138,10 @@ fun AppRoot() {
         }
     }
 }
+
+/** A draft without a problem type starts at the type list; otherwise at photos and location. */
+private fun draftRoute(vm: ReportViewModel): String =
+    if (vm.draft.value.types.isEmpty()) Routes.TYPES else Routes.CAPTURE
 
 /** Suggestion chips on the home screen use this to preselect a type. */
 fun preselect(vm: ReportViewModel, type: IncidentType) {

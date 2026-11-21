@@ -72,14 +72,17 @@ class CameraHandle {
         context: Context,
         output: File,
         withAudio: Boolean,
-        onFinished: (Boolean) -> Unit
+        onFinished: (Boolean) -> Unit,
+        location: android.location.Location? = null
     ) {
         val rec = recorder ?: run {
             onFinished(false)
             return
         }
         val pending = try {
-            val options = FileOutputOptions.Builder(output).build()
+            val options = FileOutputOptions.Builder(output)
+                .apply { if (location != null) setLocation(location) }
+                .build()
             if (withAudio) rec.prepareRecording(context, options).withAudioEnabled()
             else rec.prepareRecording(context, options)
         } catch (e: Exception) {

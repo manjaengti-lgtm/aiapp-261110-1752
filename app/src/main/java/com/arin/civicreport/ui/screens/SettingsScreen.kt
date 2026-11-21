@@ -50,6 +50,7 @@ fun SettingsScreen(vm: ReportViewModel, onBack: () -> Unit) {
     var notifications by remember { mutableStateOf(current.notificationsEnabled) }
     var highAccuracy by remember { mutableStateOf(current.highAccuracy) }
     var national by remember { mutableStateOf(current.includeNationalAuthorities) }
+    var gallery by remember { mutableStateOf(current.saveToGallery) }
 
     val emailValid = email.isBlank() || Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()
     val phoneValid = phone.isBlank() || phone.count { it.isDigit() } in 8..15
@@ -171,6 +172,15 @@ fun SettingsScreen(vm: ReportViewModel, onBack: () -> Unit) {
                         Text("Always copy the PMO and CPCB")
                         Switch(checked = national, onCheckedChange = { national = it })
                     }
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Also save photos and videos to the phone gallery", modifier = Modifier.weight(1f))
+                        Switch(checked = gallery, onCheckedChange = { gallery = it })
+                    }
                 }
             }
 
@@ -200,7 +210,8 @@ fun SettingsScreen(vm: ReportViewModel, onBack: () -> Unit) {
                             defaultChannel = channel,
                             notificationsEnabled = notifications,
                             highAccuracy = highAccuracy,
-                            includeNationalAuthorities = national
+                            includeNationalAuthorities = national,
+                            saveToGallery = gallery
                         )
                     )
                     scope.launch {

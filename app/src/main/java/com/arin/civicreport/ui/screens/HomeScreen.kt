@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -51,7 +52,8 @@ fun HomeScreen(
     onNewReport: (IncidentType?) -> Unit,
     onReports: () -> Unit,
     onSettings: () -> Unit,
-    onOpenReport: (String) -> Unit
+    onOpenReport: (String) -> Unit,
+    onEvidence: () -> Unit = {}
 ) {
     val reports by vm.reports.collectAsStateWithLifecycle()
     var suggestions by remember { mutableStateOf(emptyList<IncidentType>()) }
@@ -107,6 +109,14 @@ fun HomeScreen(
                             Icon(Icons.Filled.Add, contentDescription = null)
                             Spacer(Modifier.size(8.dp))
                             Text("Report an issue")
+                        }
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = onEvidence,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.PhotoCamera, contentDescription = null)
+                            Spacer(Modifier.size(8.dp))
+                            Text("Take photos now, complain later")
                         }
                     }
                 }

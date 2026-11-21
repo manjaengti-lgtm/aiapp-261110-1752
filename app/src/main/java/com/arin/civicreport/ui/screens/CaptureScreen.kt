@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -51,7 +52,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.arin.civicreport.data.ExifGeotagger
 import com.arin.civicreport.model.ReportLocation
 import com.arin.civicreport.ui.AppScaffold
 import com.arin.civicreport.ui.components.AttachmentsCard
@@ -111,10 +111,18 @@ fun CaptureScreen(vm: ReportViewModel, onBack: () -> Unit, onContinue: () -> Uni
         if (uri != null) {
             scope.launch {
                 val path = vm.mediaStore.import(uri)
-                if (path != null) vm.addPhoto(path) else snackbar.showSnackbar("Photo could not be copied.")
+                when {
+                    path == null -> snackbar.showSnackbar("The file could not be copied.")
+                    path.endsWith(".mp4", true) -> {
+                        if (draft.video == null) vm.setVideo(path) else vm.addLocalFile(path, "video/mp4")
+                    }
+                    else -> vm.addPhoto(path)
+                }
             }
         }
     }
+    var showSaved by remember { mutableStateOf(false) }
+    val savedItems by vm.evidenceItems.collectAsStateWithLifecycle()
 
     AppScaffold(
         screenTitle = "Photo and exact location",
@@ -164,11 +172,11 @@ fun CaptureScreen(vm: ReportViewModel, onBack: () -> Unit, onContinue: () -> Uni
                                 context = context,
                                 output = file,
                                 onSaved = { saved ->
-                                    if (fix.hasFix) {
-                                        ExifGeotagger.tagPhoto(saved.absolutePath, fix.latitude, fix.longitude)
+                                    scope.launch {
+                                        val item = vm.saveCapturedPhoto(saved, fix)
+                                        vm.useEvidence(listOf(item))
+                                        snackbar.showSnackbar("Photo saved with location and time. It is also kept in Saved photos & videos.")
                                     }
-                                    vm.addPhoto(saved.absolutePath)
-                                    scope.launch { snackbar.showSnackbar("Photo saved with the location.") }
                                 },
                                 onError = { message -> scope.launch { snackbar.showSnackbar(message) } }
                             )
@@ -186,14 +194,20 @@ fun CaptureScreen(vm: ReportViewModel, onBack: () -> Unit, onContinue: () -> Uni
                             } else {
                                 if (!audioGranted) audioLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                 val file = vm.mediaStore.newVideoFile()
+                                val fix = draft.location
+                                val startedAt = System.currentTimeMillis()
                                 cameraHandle.startRecording(
                                     context = context,
                                     output = file,
                                     withAudio = audioGranted,
+                                    location = com.arin.civicreport.data.EvidenceStore.androidLocation(fix),
                                     onFinished = { success ->
                                         if (success) {
-                                            vm.setVideo(file.absolutePath)
-                                            scope.launch { snackbar.showSnackbar("Video saved.") }
+                                            scope.launch {
+                                                val item = vm.saveCapturedVideo(file, fix, startedAt)
+                                                vm.useEvidence(listOf(item))
+                                                snackbar.showSnackbar("Video saved with location and time.")
+                                            }
                                         } else {
                                             file.delete()
                                             scope.launch { snackbar.showSnackbar("Video recording failed.") }
@@ -213,7 +227,7 @@ fun CaptureScreen(vm: ReportViewModel, onBack: () -> Unit, onContinue: () -> Uni
                     }
                     IconButton(onClick = {
                         galleryLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
                         )
                     }) {
                         Icon(Icons.Filled.PhotoLibrary, contentDescription = "Pick from gallery")
@@ -251,6 +265,12 @@ fun CaptureScreen(vm: ReportViewModel, onBack: () -> Unit, onContinue: () -> Uni
                         }
                     }
                 }
+            }
+
+            OutlinedButton(onClick = { showSaved = true }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Filled.PhotoLibrary, contentDescription = null)
+                Spacer(Modifier.size(8.dp))
+                Text("Add from saved photos & videos (${savedItems.size})")
             }
 
             Card(Modifier.fillMaxWidth()) {
@@ -328,6 +348,16 @@ fun CaptureScreen(vm: ReportViewModel, onBack: () -> Unit, onContinue: () -> Uni
             ) {
                 Text("Find the responsible offices")
             }
+            OutlinedButton(
+                onClick = {
+                    scope.launch {
+                        vm.saveDraft()
+                        snackbar.showSnackbar("Draft saved. Open it any time from My complaints to finish and send.")
+                    }
+                },
+                enabled = draft.photos.isNotEmpty() || draft.video != null || draft.attachments.isNotEmpty() || draft.notes.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Save draft and finish later") }
             if (!draft.canContinue) {
                 Text(
                     "Tick a problem type and get a location fix to continue.",
@@ -337,6 +367,23 @@ fun CaptureScreen(vm: ReportViewModel, onBack: () -> Unit, onContinue: () -> Uni
             }
             Spacer(Modifier.height(16.dp))
         }
+    }
+
+    if (showSaved) {
+        com.arin.civicreport.ui.components.EvidencePickerDialog(
+            saved = savedItems,
+            alreadyAdded = (draft.photos + listOfNotNull(draft.video)).toSet(),
+            onDismiss = { showSaved = false },
+            onAdd = { chosen ->
+                showSaved = false
+                val moved = vm.useEvidence(chosen)
+                scope.launch {
+                    snackbar.showSnackbar(
+                        if (moved) "Added. The location is now where they were taken." else "Added."
+                    )
+                }
+            }
+        )
     }
 }
 
