@@ -660,6 +660,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         ccConnectError = null
         val cleanKey = key.trim().replace(Regex("\\s"), "")
         ArinApp.scope.launch {
+            var retried = false
             try {
                 var usedKey = cleanKey
                 var note: String? = null
@@ -696,13 +697,22 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 note?.let { notice = it }
                 chooseCcBackend("custom")
             } catch (e: com.arin.claudecode.ClaudeCode.NeedsModel) {
-                ccNeedsModel = true
-                ccConnectError = e.message
+                // The API won't list its models: use the model saved for this site in the chat tab (never ask).
+                val host = ccHost(baseUrl)
+                val saved = ccSavedApiChoices().firstOrNull { ccHost(it.second) == host && it.third.second.isNotBlank() }?.third?.second
+                if (saved != null && typedModel.isBlank()) {
+                    retried = true
+                    ccConnecting = false
+                    connectCcApi(baseUrl, key, typedModel = saved)
+                    return@launch
+                }
+                ccConnectError = "This API didn't share its list of models, so Claude Code can't pick one. " +
+                    "Check the URL (it usually ends in /v1)."
             } catch (e: Exception) {
                 ccNeedsModel = false
                 ccConnectError = e.message ?: "Couldn't connect."
             } finally {
-                ccConnecting = false
+                if (!retried) ccConnecting = false
             }
         }
     }

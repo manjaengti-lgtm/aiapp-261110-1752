@@ -111,7 +111,6 @@ private fun CustomApiLogin(vm: ChatViewModel) {
     val colors = MaterialTheme.colorScheme
     var base by rememberSaveable { mutableStateOf(vm.settings.ccCustomBase.removeSuffix("/anthropic")) }
     var key by rememberSaveable { mutableStateOf(vm.settings.ccCustomKey) }
-    var model by rememberSaveable { mutableStateOf("") }
     var pickOpen by rememberSaveable { mutableStateOf(false) }
     val saved = vm.ccSavedApiChoices()
     val fieldColors = OutlinedTextFieldDefaults.colors(focusedTextColor = colors.onSurface, unfocusedTextColor = colors.onSurface)
@@ -133,7 +132,7 @@ private fun CustomApiLogin(vm: ChatViewModel) {
                             }
                         },
                         onClick = {
-                            base = url; key = keyModel.first; model = ""; pickOpen = false
+                            base = url; key = keyModel.first; pickOpen = false
                             vm.connectCcApi(url, keyModel.first, preferModel = keyModel.second)
                         },
                     )
@@ -149,16 +148,9 @@ private fun CustomApiLogin(vm: ChatViewModel) {
         key, { key = it }, label = { Text("API key") }, singleLine = true,
         visualTransformation = PasswordVisualTransformation(), colors = fieldColors, modifier = Modifier.fillMaxWidth(),
     )
-    // Only when the API won't list its models.
-    if (vm.ccNeedsModel) {
-        OutlinedTextField(
-            model, { model = it }, label = { Text("Model id") }, placeholder = { Text("the model you use in chat") },
-            singleLine = true, colors = fieldColors, modifier = Modifier.fillMaxWidth(),
-        )
-    }
     vm.ccConnectError?.let { Text(it, color = colors.error, style = MaterialTheme.typography.bodySmall) }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Button(onClick = { vm.connectCcApi(base, key, model) }, enabled = !vm.ccConnecting && base.isNotBlank() && key.isNotBlank()) {
+        Button(onClick = { vm.connectCcApi(base, key) }, enabled = !vm.ccConnecting && base.isNotBlank() && key.isNotBlank()) {
             Text(if (vm.ccConnecting) "Connecting…" else if (vm.ccApiConnected) "Reconnect" else "Connect")
         }
         if (vm.ccConnecting) { Spacer(Modifier.width(10.dp)); CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) }
