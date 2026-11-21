@@ -1,6 +1,7 @@
 package com.arin.app
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,6 +37,14 @@ fun AppShell(vm: ChatViewModel) {
         }
     }
 
+    // Paint the theme background behind every screen. Without this, screens that are a bare Column
+    // (Movie Maker, Claude Code, Free tokens, Logs) show the window's dark background under the
+    // light theme's dark text, so the text can't be seen.
+    androidx.compose.material3.Surface(
+        modifier = androidx.compose.ui.Modifier.fillMaxSize(),
+        color = androidx.compose.material3.MaterialTheme.colorScheme.background,
+        contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
+    ) {
     when (screen) {
         Screen.Chat -> ChatScreen(
             vm,
@@ -72,5 +81,6 @@ fun AppShell(vm: ChatViewModel) {
             onBack = { screen = if (backToProjects) Screen.Projects else Screen.Chat },
             onOpenChat = { screen = Screen.Chat },
         )
+    }
     }
 }

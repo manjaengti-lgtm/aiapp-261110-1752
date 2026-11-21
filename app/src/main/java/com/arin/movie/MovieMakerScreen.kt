@@ -1,20 +1,27 @@
 package com.arin.movie
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -22,64 +29,109 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.arin.chat.ChatViewModel
 
 /**
- * "Movie Maker" tab: paste a script, your own model directs it into scenes, and free tools render a
- * narrated video that stitches together inside Arin's Linux.
+ * Movie Maker: one box in, a film out. Your own model plans the film (characters, shots, dialogue);
+ * free tools render it in Arin's Linux; optional real motion uses your own free Hugging Face GPU quota.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MovieMakerScreen(vm: ChatViewModel, onBack: () -> Unit) {
     LaunchedEffect(Unit) { vm.refreshMovie() }
+    val colors = MaterialTheme.colorScheme
+    // Explicit colours so the box is readable in both light and dark themes.
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = colors.onSurface,
+        unfocusedTextColor = colors.onSurface,
+        focusedPlaceholderColor = colors.onSurfaceVariant,
+        unfocusedPlaceholderColor = colors.onSurfaceVariant,
+        cursorColor = colors.primary,
+        focusedBorderColor = colors.primary,
+        unfocusedBorderColor = colors.outline,
+        focusedContainerColor = colors.surface,
+        unfocusedContainerColor = colors.surface,
+    )
+
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-            Text("Movie Maker", style = MaterialTheme.typography.titleLarge)
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = colors.onBackground) }
+            Text("Movie Maker", style = MaterialTheme.typography.titleLarge, color = colors.onBackground)
         }
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                "Describe a scene or paste a whole script. Your own model breaks it into scenes and writes the " +
-                    "narration; free tools make an image and voice for each, and ffmpeg stitches them into one video. " +
-                    "Longer scripts make longer films.",
+                "Describe a film or paste a script. Your model writes the characters, shots and dialogue; " +
+                    "Arin makes a photoreal picture and voice for every shot, adds real motion when free GPU is " +
+                    "available, checks each shot, and cuts it all into one video with subtitles.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = colors.onSurfaceVariant,
             )
 
-            var script by remember { mutableStateOf("") }
+            var script by rememberSaveable { mutableStateOf("") }
             OutlinedTextField(
                 value = script,
                 onValueChange = { script = it },
                 placeholder = { Text("e.g. A short film about a lighthouse keeper who befriends a storm…") },
-                modifier = Modifier.fillMaxWidth().height(160.dp),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface),
+                colors = fieldColors,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp),
             )
             Button(onClick = { vm.makeMovie(script) }, enabled = !vm.movieBusy && script.isNotBlank()) {
-                Text(if (vm.movieBusy) "Making…" else "Make movie")
+                Text(if (vm.movieBusy) "Working…" else "Make movie")
+            }
+
+            // ---- the saved film: resume / add motion / stop ----
+            if (vm.movieHasProject) {
+                Surface(color = colors.surfaceVariant, contentColor = colors.onSurface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("🎬 ${vm.movieTitle.ifBlank { "Current film" }}", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Saved on your phone. Finished shots are kept, so you can close Arin and continue later.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (vm.movieBusy) {
+                                OutlinedButton(onClick = { vm.stopMovie() }) { Text("Stop") }
+                            } else {
+                                OutlinedButton(onClick = { vm.resumeMovie() }) { Text("Resume") }
+                                OutlinedButton(onClick = { vm.addMotionToMovie() }) { Text("Add motion") }
+                            }
+                        }
+                    }
+                }
             }
 
             if (vm.movieBusy || vm.movieProgress.isNotEmpty() || vm.movieLog.isNotEmpty()) {
-                Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
+                Surface(color = colors.surfaceVariant, contentColor = colors.onSurface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (vm.movieBusy) { CircularProgressIndicator(modifier = Modifier.width(18.dp).height(18.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)) }
+                            if (vm.movieBusy) { CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)) }
                             Text("Progress", style = MaterialTheme.typography.titleSmall)
                         }
                         Spacer(Modifier.height(4.dp))
-                        vm.movieLog.takeLast(8).forEach {
-                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        vm.movieLog.takeLast(6).forEach {
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                         }
                         if (vm.movieProgress.isNotEmpty()) {
                             Spacer(Modifier.height(4.dp))
@@ -90,9 +142,19 @@ fun MovieMakerScreen(vm: ChatViewModel, onBack: () -> Unit) {
             }
 
             if (vm.movieReady) {
-                Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
+                Surface(color = colors.primaryContainer, contentColor = colors.onPrimaryContainer, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
-                        Text("Your movie is ready 🎬", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            if (vm.moviePartial) "Your movie is ready — some shots are missing" else "Your movie is ready 🎬",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        vm.movieSummary?.let { s ->
+                            Text(
+                                "${s.shots - s.missing} shots · ${s.seconds.toInt()} s · ${s.motion} with real motion" +
+                                    (if (s.missing > 0) " · ${s.missing} missing (tap Resume to retry)" else ""),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                         Spacer(Modifier.height(8.dp))
                         Row {
                             Button(onClick = { vm.playMovie() }) { Text("Play") }
@@ -103,14 +165,68 @@ fun MovieMakerScreen(vm: ChatViewModel, onBack: () -> Unit) {
                 }
             }
 
+            MotionSettings(vm, fieldColors)
+
             Text(
-                "Note: this is a narrated film built from AI images with motion — not a consistent-character live-action " +
-                    "movie, which no free tool can do on a phone. Rendering happens on your phone, so long films can take " +
-                    "several minutes; keep Arin open while it works.",
+                "Real motion is optional and uses your own free Hugging Face GPU time (only a few clips a day). " +
+                    "When it runs out, shots get a camera move over the picture instead, and Add motion upgrades them " +
+                    "later. Faces stay similar but not identical between shots — no free tool can guarantee that yet. " +
+                    "Nothing paid is ever used.",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = colors.onSurfaceVariant,
             )
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun MotionSettings(vm: ChatViewModel, fieldColors: androidx.compose.material3.TextFieldColors) {
+    val colors = MaterialTheme.colorScheme
+    val uri = LocalUriHandler.current
+    var open by rememberSaveable { mutableStateOf(false) }
+    Surface(color = colors.surfaceVariant, contentColor = colors.onSurface, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Row(Modifier.fillMaxWidth().clickable { open = !open }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Real motion & subtitles", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        if (vm.movieHfToken.isBlank()) "Off — pictures with camera moves" else "On — free Hugging Face GPU",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant,
+                    )
+                }
+                Icon(if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, contentDescription = null)
+            }
+            if (open) {
+                OutlinedTextField(
+                    value = vm.movieHfToken,
+                    onValueChange = { vm.setMovieHfToken(it) },
+                    label = { Text("Hugging Face token (free account)") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    colors = fieldColors,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                TextButton(onClick = { uri.openUri("https://huggingface.co/settings/tokens") }) { Text("Get a free token (Read access is enough)") }
+                OutlinedTextField(
+                    value = vm.movieSpace,
+                    onValueChange = { vm.setMovieSpace(it) },
+                    label = { Text("Video Space") },
+                    singleLine = true,
+                    colors = fieldColors,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Image-to-video Space (Wan 2.2). Change it if this one goes offline.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                )
+                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Burn subtitles into the video", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = vm.movieSubtitles, onCheckedChange = { vm.setMovieSubtitles(it) })
+                }
+            }
         }
     }
 }

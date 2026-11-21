@@ -196,6 +196,22 @@ class Settings(context: Context) {
         get() = secret("cc_custom")
         set(value) = setSecret("cc_custom", value)
 
+    // ---- Movie Maker (film studio) ----
+
+    /** The person's own Hugging Face token: free ZeroGPU quota is counted against their account. Encrypted. */
+    var movieHfToken: String
+        get() = secret("movie_hf")
+        set(value) = setSecret("movie_hf", value)
+
+    /** Which Hugging Face Space does image-to-video. Spaces come and go, so it can be changed. */
+    var movieSpace: String
+        get() = prefs.getString("movie_space", null)?.takeIf { it.isNotBlank() } ?: com.arin.movie.MovieMaker.DEFAULT_SPACE
+        set(value) = prefs.edit().putString("movie_space", value.trim()).apply()
+
+    var movieSubtitles: Boolean
+        get() = prefs.getBoolean("movie_subs", true)
+        set(value) = prefs.edit().putBoolean("movie_subs", value).apply()
+
     /** Other secrets kept with the API keys, such as the GitHub token Build mode uses. */
     fun secret(name: String): String = keys.getString("extra_$name", "").orEmpty()
 
