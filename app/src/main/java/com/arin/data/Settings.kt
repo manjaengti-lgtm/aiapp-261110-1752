@@ -178,6 +178,24 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("voice_barge_in", false)
         set(value) = prefs.edit().putBoolean("voice_barge_in", value).apply()
 
+    // ---- Claude Code backend: the person's Pro login, or their own custom (Anthropic-compatible) API ----
+    var ccBackend: String
+        get() = prefs.getString("cc_backend", "pro") ?: "pro"
+        set(value) = prefs.edit().putString("cc_backend", value).apply()
+
+    /** Anthropic-compatible base URL, e.g. https://api.deepseek.com/anthropic */
+    var ccCustomBase: String
+        get() = prefs.getString("cc_custom_base", "") ?: ""
+        set(value) = prefs.edit().putString("cc_custom_base", value.trim()).apply()
+
+    var ccCustomModel: String
+        get() = prefs.getString("cc_custom_model", "") ?: ""
+        set(value) = prefs.edit().putString("cc_custom_model", value.trim()).apply()
+
+    var ccCustomKey: String
+        get() = secret("cc_custom")
+        set(value) = setSecret("cc_custom", value)
+
     /** Other secrets kept with the API keys, such as the GitHub token Build mode uses. */
     fun secret(name: String): String = keys.getString("extra_$name", "").orEmpty()
 

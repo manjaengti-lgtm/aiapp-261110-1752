@@ -14,7 +14,7 @@ import com.arin.project.ProjectsScreen
 import com.arin.settings.SettingsScreen
 
 /** Every top-level screen. Chat is home. */
-enum class Screen { Chat, Settings, Projects, Project, Build, Logs, FreeTokens, ClaudeCode }
+enum class Screen { Chat, Settings, Projects, Project, Build, Logs, FreeTokens, ClaudeCode, MovieMaker }
 
 /** Owns which screen is showing. Screens never navigate themselves; they call back here. */
 @Composable
@@ -46,6 +46,7 @@ fun AppShell(vm: ChatViewModel) {
             onOpenLogs = { screen = Screen.Logs },
             onOpenFree = { screen = Screen.FreeTokens },
             onOpenClaudeCode = { screen = Screen.ClaudeCode },
+            onOpenMovieMaker = { screen = Screen.MovieMaker },
             startVoice = Launch.voicePending,
             onVoiceStarted = { Launch.voicePending = false },
         )
@@ -53,6 +54,7 @@ fun AppShell(vm: ChatViewModel) {
         Screen.Logs -> LogsScreen(onBack = { screen = Screen.Chat })
         Screen.FreeTokens -> com.arin.free.FreeTokensScreen(vm, onBack = { screen = Screen.Chat })
         Screen.ClaudeCode -> com.arin.claudecode.ClaudeCodeScreen(vm, onBack = { screen = Screen.Chat })
+        Screen.MovieMaker -> com.arin.movie.MovieMakerScreen(vm, onBack = { screen = Screen.Chat })
         Screen.Build -> com.arin.builder.BuildScreen(
             chat = vm,
             vm = androidx.lifecycle.viewmodel.compose.viewModel<com.arin.builder.BuildViewModel>(),

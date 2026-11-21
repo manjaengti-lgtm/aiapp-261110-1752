@@ -82,10 +82,52 @@ fun ClaudeCodeScreen(vm: ChatViewModel, onBack: () -> Unit) {
                 }
             }
 
-            // ---- Step 2: connect ----
+            // ---- Step 2: choose the brain ----
             if (vm.ccInstalled) {
                 Card {
-                    Text("2 · Connect your Claude account", style = MaterialTheme.typography.titleMedium)
+                    Text("2 · Model (the brain)", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(4.dp))
+                    var backend by remember { mutableStateOf(vm.settings.ccBackend) }
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        androidx.compose.material3.FilterChip(
+                            selected = backend == "pro",
+                            onClick = { backend = "pro"; vm.settings.ccBackend = "pro" },
+                            label = { Text("My Claude Pro login") },
+                        )
+                        androidx.compose.material3.FilterChip(
+                            selected = backend == "custom",
+                            onClick = { backend = "custom"; vm.settings.ccBackend = "custom" },
+                            label = { Text("My custom API") },
+                        )
+                    }
+                    if (backend == "custom") {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Point Claude Code at your own Anthropic-compatible API. For DeepSeek use base " +
+                                "https://api.deepseek.com/anthropic and a DeepSeek model id.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        var base by remember { mutableStateOf(vm.settings.ccCustomBase) }
+                        var model by remember { mutableStateOf(vm.settings.ccCustomModel) }
+                        var key by remember { mutableStateOf(vm.settings.ccCustomKey) }
+                        var saved by remember { mutableStateOf(true) }
+                        OutlinedTextField(base, { base = it; saved = false }, label = { Text("Base URL (…/anthropic)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(model, { model = it; saved = false }, label = { Text("Model id") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(key, { key = it; saved = false }, label = { Text("API key") }, singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(6.dp))
+                        Button(onClick = {
+                            vm.settings.ccCustomBase = base; vm.settings.ccCustomModel = model; vm.settings.ccCustomKey = key
+                            saved = true
+                        }, enabled = !saved && base.isNotBlank() && key.isNotBlank()) { Text(if (saved) "Saved ✓" else "Save") }
+                    }
+                }
+            }
+
+            // ---- Step 2b: connect Pro (only when using the Pro login) ----
+            if (vm.ccInstalled && vm.settings.ccBackend == "pro") {
+                Card {
+                    Text("Connect your Claude account", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(4.dp))
                     if (vm.ccConnected) {
                         Text("Connected with your Claude subscription ✓", color = MaterialTheme.colorScheme.primary)
@@ -138,7 +180,9 @@ fun ClaudeCodeScreen(vm: ChatViewModel, onBack: () -> Unit) {
             }
 
             // ---- Step 3: ask ----
-            if (vm.ccConnected) {
+            val customReady = vm.settings.ccBackend == "custom" &&
+                vm.settings.ccCustomBase.isNotBlank() && vm.settings.ccCustomKey.isNotBlank()
+            if (vm.ccInstalled && (vm.ccConnected || customReady)) {
                 Card {
                     Text("3 · Ask Claude Code", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(6.dp))

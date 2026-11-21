@@ -586,14 +586,125 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val app = getApplication<Application>()
         ccBusy = true
         ccOutput = "Thinking…"
+        val custom = if (settings.ccBackend == "custom")
+            com.arin.claudecode.ClaudeCode.Backend(settings.ccCustomBase, settings.ccCustomKey, settings.ccCustomModel)
+        else null
         ArinApp.scope.launch {
             ccOutput = try {
-                com.arin.claudecode.ClaudeCode.ask(app, prompt)
+                com.arin.claudecode.ClaudeCode.ask(app, prompt, custom)
             } catch (e: Exception) {
                 "Error: ${e.message}"
             }
             ccBusy = false
         }
+    }
+
+    // ---- Movie Maker: your custom model directs; free tools render; ffmpeg stitches ----
+
+    var movieBusy by mutableStateOf(false)
+    var movieProgress by mutableStateOf("")
+    var movieReady by mutableStateOf(false)   // a finished movie.mp4 is available to play
+    val movieLog = mutableStateListOf<String>()
+
+    private fun movieLogLine(line: String) {
+        ArinApp.scope.launch(kotlinx.coroutines.Dispatchers.Main) { movieLog += line; while (movieLog.size > 30) movieLog.removeAt(0) }
+    }
+
+    /** Ask the person's own model to turn a script into scenes, then render + stitch a video. */
+    fun makeMovie(script: String) {
+        if (movieBusy || script.isBlank()) return
+        val app = getApplication<Application>()
+        movieBusy = true
+        movieReady = false
+        movieProgress = ""
+        movieLog.clear()
+        // Resolve the active model (the "director"), exactly like a normal reply.
+        val p = provider
+        val m = model
+        val key = settings.key(p)
+        if (p == Provider.Free) syncFreePool()
+        val endpoint = if (p == Provider.Custom) com.arin.llm.CustomApi.current() else null
+        ArinApp.scope.launch {
+            try {
+                if (!com.arin.terminal.Linux.installed(app)) {
+                    movieLogLine("Setting up Linux first…")
+                    com.arin.terminal.Linux.install(app) { movieLogLine(it) }
+                }
+                if (!com.arin.movie.MovieMaker.toolsReady(app)) {
+                    if (!com.arin.movie.MovieMaker.installTools(app) { movieLogLine(it) }) {
+                        notice = "Couldn't install ffmpeg."; movieBusy = false; return@launch
+                    }
+                }
+                movieLogLine("Your model is writing the scenes…")
+                val director = "You are a film director. Turn the user's script or idea into a sequence of scenes for a narrated AI film. " +
+                    "Reply with ONLY a JSON array, no prose, no code fences. Each element is " +
+                    "{\"prompt\": a vivid, cinematic visual description for an image generator (setting, subject, lighting, mood, camera), " +
+                    "\"narration\": one or two sentences of voiceover to speak over that scene}. " +
+                    "Use as many scenes as the story needs; for a longer film use more scenes. Keep narration natural to say aloud."
+                val sb = StringBuilder()
+                com.arin.llm.Llm.stream(p, key, m, director, listOf(com.arin.llm.Turn(true, script)), endpoint = endpoint)
+                    .collect { if (it is com.arin.llm.Delta.Text) sb.append(it.text) }
+                val scenes = parseScenes(sb.toString())
+                if (scenes.isEmpty()) { notice = "The model didn't return any scenes — try a clearer script."; movieBusy = false; return@launch }
+                movieLogLine("${scenes.size} scenes. Rendering (this takes a while on a phone)…")
+                if (!com.arin.movie.MovieMaker.startRender(app, scenes.take(60))) {
+                    notice = "Couldn't start rendering."; movieBusy = false; return@launch
+                }
+                // Poll progress; rendering on a phone is slow, so poll generously.
+                repeat(300) {
+                    kotlinx.coroutines.delay(4000)
+                    movieProgress = com.arin.movie.MovieMaker.progress(app)
+                    if (com.arin.movie.MovieMaker.isDone(app)) {
+                        movieReady = true; movieProgress = "Done — your movie is ready."; return@launch
+                    }
+                    if (com.arin.movie.MovieMaker.failed(app)) {
+                        notice = "Rendering failed. Check your connection and try again."; return@launch
+                    }
+                }
+            } catch (e: Exception) {
+                notice = "Movie error: ${e.message}"
+            } finally {
+                movieBusy = false
+            }
+        }
+    }
+
+    /** Keep watching an in-progress render (e.g. after reopening the screen). */
+    fun refreshMovie() {
+        val app = getApplication<Application>()
+        ArinApp.scope.launch {
+            movieProgress = com.arin.movie.MovieMaker.progress(app)
+            movieReady = com.arin.movie.MovieMaker.isDone(app)
+        }
+    }
+
+    fun playMovie() {
+        val app = getApplication<Application>()
+        if (!com.arin.movie.MovieMaker.play(app)) notice = "No finished movie to play yet."
+    }
+
+    fun shareMovie() {
+        val app = getApplication<Application>()
+        com.arin.movie.MovieMaker.shareIntent(app)?.let {
+            runCatching { app.startActivity(android.content.Intent.createChooser(it, "Share movie").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        } ?: run { notice = "No finished movie to share yet." }
+    }
+
+    /** Pull the JSON scene array out of the model's reply, tolerating code fences and stray prose. */
+    private fun parseScenes(raw: String): List<com.arin.movie.MovieMaker.Scene> {
+        val start = raw.indexOf('[')
+        val end = raw.lastIndexOf(']')
+        if (start < 0 || end <= start) return emptyList()
+        return runCatching {
+            val arr = org.json.JSONArray(raw.substring(start, end + 1))
+            (0 until arr.length()).mapNotNull { idx ->
+                val o = arr.optJSONObject(idx) ?: return@mapNotNull null
+                val prompt = o.optString("prompt").trim()
+                val narration = o.optString("narration").trim()
+                if (prompt.isBlank() && narration.isBlank()) null
+                else com.arin.movie.MovieMaker.Scene(prompt.ifBlank { narration }, narration)
+            }
+        }.getOrDefault(emptyList())
     }
 
     fun setUpRea() {

@@ -88,13 +88,25 @@ object ClaudeCode {
         Shell.run(context, "rm -f $TOKEN_FILE; pkill -f 'claude setup-token' 2>/dev/null; echo ok", 60_000)
     }
 
-    /** Run a prompt non-interactively and return Claude Code's answer. */
-    suspend fun ask(context: Context, prompt: String): String {
+    /** A custom Anthropic-compatible backend (e.g. DeepSeek), used instead of the Pro login. */
+    data class Backend(val base: String, val key: String, val model: String)
+
+    /** Run a prompt non-interactively and return the answer. With [custom], the brain is that API. */
+    suspend fun ask(context: Context, prompt: String, custom: Backend? = null): String {
+        val setup = if (custom != null && custom.base.isNotBlank() && custom.key.isNotBlank()) {
+            val model = custom.model.takeIf { it.isNotBlank() }?.let {
+                "export ANTHROPIC_MODEL='${esc(it)}'; export ANTHROPIC_DEFAULT_OPUS_MODEL='${esc(it)}'; " +
+                    "export ANTHROPIC_DEFAULT_SONNET_MODEL='${esc(it)}'; export ANTHROPIC_DEFAULT_HAIKU_MODEL='${esc(it)}'; "
+            } ?: ""
+            "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY; " +
+                "export ANTHROPIC_BASE_URL='${esc(custom.base)}'; export ANTHROPIC_AUTH_TOKEN='${esc(custom.key)}'; $model"
+        } else {
+            "unset ANTHROPIC_API_KEY ANTHROPIC_BASE_URL ANTHROPIC_MODEL; " +
+                "export CLAUDE_CODE_OAUTH_TOKEN=\"$(cat $TOKEN_FILE 2>/dev/null)\"; "
+        }
         val r = Shell.run(
             context,
-            "unset ANTHROPIC_API_KEY; export CLAUDE_CODE_OAUTH_TOKEN=\"$(cat $TOKEN_FILE 2>/dev/null)\"; " +
-                "cd /root/files 2>/dev/null || cd /root; " +
-                "claude -p '${esc(prompt)}' 2>&1",
+            setup + "cd /root/files 2>/dev/null || cd /root; claude -p '${esc(prompt)}' 2>&1",
             timeoutMs = 10 * 60_000L,
         )
         return (r.stdout.ifBlank { r.stderr }).ifBlank { r.error ?: "No output from Claude Code." }
