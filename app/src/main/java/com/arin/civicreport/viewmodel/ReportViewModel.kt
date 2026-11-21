@@ -289,7 +289,7 @@ class ReportViewModel(app: Application) : AndroidViewModel(app) {
             selectedAuthorityIds = report.authorities.map { it.id }.toSet(),
             draftId = report.id
         )
-        if (report.types.isNotEmpty() && report.location.hasFix) runAuthoritySearch()
+        if (report.types.isNotEmpty() && report.location.hasFix) viewModelScope.launch { runAuthoritySearch() }
     }
 
     fun clearSendResult() {
