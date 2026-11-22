@@ -1,6 +1,9 @@
 package com.fakelocation.app
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -38,6 +41,30 @@ object Share {
             true
         } catch (_: Exception) {
             false
+        }
+    }
+
+    /**
+     * True if WhatsApp may use location in the background ("Allow all the time").
+     * Live location needs this, otherwise it stays on the 🕒 clock. Null if WhatsApp isn't installed.
+     */
+    fun whatsappHasBackgroundLocation(ctx: Context): Boolean? {
+        val pkg = whatsappPackage(ctx) ?: return null
+        val pm = ctx.packageManager
+        val fine = pm.checkPermission(Manifest.permission.ACCESS_FINE_LOCATION, pkg) == PackageManager.PERMISSION_GRANTED
+        if (!fine) return false
+        if (Build.VERSION.SDK_INT < 29) return true
+        return pm.checkPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION, pkg) == PackageManager.PERMISSION_GRANTED
+    }
+
+    /** Google Location Accuracy mixes in your real Wi-Fi/mobile-tower position; turning it off helps. */
+    fun openGoogleLocationAccuracy(ctx: Context) {
+        val tries = listOf(
+            Intent("com.google.android.gms.location.settings.GOOGLE_LOCATION_ACCURACY"),
+            Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+        )
+        for (i in tries) {
+            try { ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return } catch (_: Exception) { }
         }
     }
 

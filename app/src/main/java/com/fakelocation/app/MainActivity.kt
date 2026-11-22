@@ -1118,15 +1118,7 @@ class MainActivity : ComponentActivity() {
                                 "WhatsApp chat → 📎 → Location → \"Send your current location\".",
                             fontSize = 13.sp
                         )
-                        Text(
-                            "WhatsApp can't find location or shows the real one? Give WhatsApp Location " +
-                                "permission (Allow all the time) and close & reopen WhatsApp.",
-                            fontSize = 12.sp, color = Color(0xFFE65100)
-                        )
-                        TextButton(
-                            onClick = { Share.openWhatsAppPermissions(ctx) },
-                            contentPadding = PaddingValues(0.dp)
-                        ) { Text("Open WhatsApp permissions") }
+                        WhatsAppFix()
                     }
                 },
                 confirmButton = {
@@ -1163,15 +1155,7 @@ class MainActivity : ComponentActivity() {
                                 "WhatsApp updates their map every few seconds.",
                             fontSize = 12.sp, color = Color.Gray
                         )
-                        Text(
-                            "WhatsApp can't find location or shows the real one? Give WhatsApp Location " +
-                                "permission (Allow all the time) and close & reopen WhatsApp.",
-                            fontSize = 12.sp, color = Color(0xFFE65100)
-                        )
-                        TextButton(
-                            onClick = { Share.openWhatsAppPermissions(ctx) },
-                            contentPadding = PaddingValues(0.dp)
-                        ) { Text("Open WhatsApp permissions") }
+                        WhatsAppFix()
                     }
                 },
                 confirmButton = {
@@ -1286,6 +1270,42 @@ class MainActivity : ComponentActivity() {
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
             elevation = ButtonDefaults.buttonElevation(4.dp)
         ) { Text(label, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+    }
+
+    /** Checks WhatsApp's location permission and offers the fixes for a live location stuck on 🕒. */
+    @Composable
+    private fun WhatsAppFix() {
+        var bg by remember { mutableStateOf(Share.whatsappHasBackgroundLocation(this)) }
+        LaunchedEffect(Unit) {
+            while (true) {
+                kotlinx.coroutines.delay(1500)
+                bg = Share.whatsappHasBackgroundLocation(this@MainActivity)
+            }
+        }
+        Column(
+            Modifier.fillMaxWidth().background(Color(0xFFFFF3E0), RoundedCornerShape(8.dp)).padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text("If the location stays on 🕒 in WhatsApp:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            when (bg) {
+                false -> Text(
+                    "❌ WhatsApp Location is NOT \"Allow all the time\". Live location can't send until you change it.",
+                    fontSize = 12.sp, color = Color(0xFFC62828)
+                )
+                true -> Text("✅ WhatsApp Location permission is OK", fontSize = 12.sp, color = Color(0xFF2E7D32))
+                null -> Text("WhatsApp not found", fontSize = 12.sp)
+            }
+            TextButton(onClick = { Share.openWhatsAppPermissions(this@MainActivity) }, contentPadding = PaddingValues(0.dp)) {
+                Text("1. WhatsApp → Permissions → Location → Allow all the time", fontSize = 12.sp)
+            }
+            TextButton(onClick = { Share.openGoogleLocationAccuracy(this@MainActivity) }, contentPadding = PaddingValues(0.dp)) {
+                Text("2. Turn OFF Google Location Accuracy", fontSize = 12.sp)
+            }
+            Text(
+                "3. Close WhatsApp fully (remove from recent apps), open it and share again.",
+                fontSize = 12.sp
+            )
+        }
     }
 
     @Composable

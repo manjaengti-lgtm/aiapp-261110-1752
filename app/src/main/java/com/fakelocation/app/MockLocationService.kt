@@ -13,6 +13,7 @@ import android.location.Criteria
 import android.location.Location
 import android.location.LocationManager
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -166,12 +167,14 @@ class MockLocationService : Service() {
     @SuppressLint("MissingPermission")
     private fun setupProviders() {
         providers.clear()
-        val wanted = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        val wanted = mutableListOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        // Android 12+ has its own fused provider that some apps read directly.
+        if (Build.VERSION.SDK_INT >= 31) wanted += LocationManager.FUSED_PROVIDER
         for (p in wanted) {
             try { lm.removeTestProvider(p) } catch (_: Exception) { }
             try {
                 lm.addTestProvider(
-                    p, false, p == LocationManager.GPS_PROVIDER, false, false,
+                    p, false, p == LocationManager.GPS_PROVIDER, p == LocationManager.NETWORK_PROVIDER, false,
                     true, true, true, Criteria.POWER_LOW, Criteria.ACCURACY_FINE
                 )
                 lm.setTestProviderEnabled(p, true)
@@ -263,6 +266,8 @@ class MockLocationService : Service() {
         bearing = curBearing
         time = System.currentTimeMillis()
         elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+        // Look like a real GPS fix.
+        extras = Bundle().apply { putInt("satellites", 9 + Random.nextInt(4)) }
         if (Build.VERSION.SDK_INT >= 26) {
             verticalAccuracyMeters = 3f
             speedAccuracyMetersPerSecond = 0.5f
