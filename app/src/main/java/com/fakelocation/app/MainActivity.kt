@@ -65,6 +65,14 @@ import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.tileprovider.MapTileProviderBasic
 import org.osmdroid.util.BoundingBox
 import java.io.File
+import android.location.LocationManager
+import androidx.activity.result.IntentSenderRequest
+import androidx.core.location.LocationManagerCompat
+import com.google.android.gms.common.api.ResolvableApiException
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.LocationSettingsRequest
+import com.google.android.gms.location.Priority
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlin.math.PI
@@ -87,8 +95,97 @@ class MainActivity : ComponentActivity() {
     private val mockOn = mutableStateOf(false)
     private var mapRef: MapView? = null
 
+    private val locOn = mutableStateOf(true)
+    private var afterLocationOn: (() -> Unit)? = null
+
     private val permLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { refresh() }
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            refresh()
+            if (hasPerm.value && !locOn.value) requestLocationOn(null)
+        }
+
+    /** Result of Google's "Turn on location?" dialog. */
+    private val locationOnLauncher =
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
+            refresh()
+            val next = afterLocationOn
+            afterLocationOn = null
+            if (locOn.value) next?.invoke() else toast("Location is still off")
+        }
+
+    /** Turns device Location ON with one tap (Google's system dialog), then runs [then]. */
+    private fun requestLocationOn(then: (() -> Unit)?) {
+        if (isLocationOn()) { then?.invoke(); return }
+        afterLocationOn = then
+        val req = LocationSettingsRequest.Builder()
+            .addLocationRequest(LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000).build())
+            .setAlwaysShow(true)
+            .build()
+        LocationServices.getSettingsClient(this).checkLocationSettings(req)
+            .addOnSuccessListener { refresh(); afterLocationOn = null; then?.invoke() }
+            .addOnFailureListener { e ->
+                if (e is ResolvableApiException) {
+                    try {
+                        locationOnLauncher.launch(IntentSenderRequest.Builder(e.resolution).build())
+                        return@addOnFailureListener
+                    } catch (_: Exception) {
+                    }
+                }
+                afterLocationOn = null
+                toast("Please turn on Location")
+                openSettings(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+            }
+    }
+
+    private fun isLocationOn(): Boolean = try {
+        LocationManagerCompat.isLocationEnabled(getSystemService(LOCATION_SERVICE) as LocationManager)
+    } catch (_: Exception) { true }
+
+    /**
+     * Makes this app the mock location app as automatically as Android allows:
+     *  - rooted phone: done silently with "appops"
+     *  - otherwise: opens Developer options right at "Select mock location app"
+     *    (or About phone if Developer options are still off).
+     */
+    private fun autoEnableMock() {
+        Thread {
+            val rooted = try {
+                val p = Runtime.getRuntime().exec(
+                    arrayOf("su", "-c", "appops set $packageName android:mock_location allow")
+                )
+                p.waitFor() == 0
+            } catch (_: Exception) { false }
+            runOnUiThread {
+                refresh()
+                when {
+                    rooted && mockOn.value -> toast("Mock location enabled automatically ✓")
+                    !devOn.value -> {
+                        toast("Tap \"Build number\" 7 times to turn on Developer options, then come back")
+                        openSettings(Settings.ACTION_DEVICE_INFO_SETTINGS)
+                    }
+                    else -> {
+                        toast("Tap \"Select mock location app\" → Fake Location, then come back")
+                        openDevMockSetting()
+                    }
+                }
+            }
+        }.start()
+    }
+
+    /** Opens Developer options and highlights the "Select mock location app" row where supported. */
+    private fun openDevMockSetting() {
+        try {
+            val i = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+                .putExtra(":settings:fragment_args_key", "mock_location_app")
+                .putExtra(":settings:show_fragment_args", Bundle().apply {
+                    putString(":settings:fragment_args_key", "mock_location_app")
+                })
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(i)
+        } catch (_: Exception) {
+            openSettings(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -99,7 +196,7 @@ class MainActivity : ComponentActivity() {
             osmdroidTileCache = File(cacheDir, "osmdroid/tiles")
         }
         refresh()
-        if (!hasPerm.value) askPermissions()
+        if (!hasPerm.value) askPermissions() else if (!locOn.value) requestLocationOn(null)
         setContent {
             MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xFF1565C0))) {
                 AppScreen()
@@ -152,6 +249,7 @@ class MainActivity : ComponentActivity() {
             Settings.Global.getInt(contentResolver, Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0) == 1
         } catch (_: Exception) { false }
         mockOn.value = isMockAppSelected(this)
+        locOn.value = isLocationOn()
     }
 
     @Suppress("DEPRECATION")
@@ -298,7 +396,7 @@ class MainActivity : ComponentActivity() {
         var styleMenu by remember { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
         val keyboard = LocalSoftwareKeyboardController.current
-        val ready = hasPerm.value && mockOn.value
+        val ready = hasPerm.value && mockOn.value && locOn.value
         val travelling = running && trip != null
         var crash by remember {
             mutableStateOf(try { crashFile.takeIf { it.exists() }?.readText() } catch (_: Exception) { null })
@@ -407,23 +505,27 @@ class MainActivity : ComponentActivity() {
             else if (!tripLocked()) tapPoint = Pt(p.latitude, p.longitude)
         }
 
-        fun checkReady(): Boolean = when {
-            !hasPerm.value -> { askPermissions(); false }
-            !mockOn.value -> { toast("Finish the setup first: select Fake Location as mock location app."); false }
-            else -> true
+        /** Makes sure permission, mock app and device Location are all ON, then runs [action]. */
+        fun withReady(action: () -> Unit) {
+            refresh()
+            when {
+                !hasPerm.value -> askPermissions()
+                !mockOn.value -> autoEnableMock()
+                !locOn.value -> requestLocationOn(action)
+                else -> action()
+            }
         }
 
-        fun startTrip(): Boolean {
+        fun startTrip(after: () -> Unit = {}) {
             val r = route
-            return when {
-                pointA == null || pointB == null -> { toast("Set both A (start) and B (destination) first"); false }
-                routing || r == null -> { toast("Please wait, finding route…"); false }
-                !checkReady() -> false
-                else -> {
+            when {
+                pointA == null || pointB == null -> toast("Set both A (start) and B (destination) first")
+                routing || r == null -> toast("Please wait, finding route…")
+                else -> withReady {
                     MockLocationService.error.value = null
-                    MockLocationService.startTravel(ctx, r, speed, drift)
+                    MockLocationService.startTravel(ctx, r, MockLocationService.speedKmh.value, prefs.drift)
                     pointA?.let { center(it.lat, it.lng) }
-                    true
+                    after()
                 }
             }
         }
@@ -835,9 +937,9 @@ class MainActivity : ComponentActivity() {
                                 Button(
                                     onClick = {
                                         if (running) MockLocationService.stop(ctx)
-                                        else if (checkReady()) {
+                                        else withReady {
                                             MockLocationService.error.value = null
-                                            MockLocationService.start(ctx, lat, lng, drift)
+                                            MockLocationService.start(ctx, lat, lng, prefs.drift)
                                         }
                                     },
                                     modifier = Modifier.fillMaxWidth().height(50.dp),
@@ -1016,6 +1118,15 @@ class MainActivity : ComponentActivity() {
                                 "WhatsApp chat → 📎 → Location → \"Send your current location\".",
                             fontSize = 13.sp
                         )
+                        Text(
+                            "WhatsApp can't find location or shows the real one? Give WhatsApp Location " +
+                                "permission (Allow all the time) and close & reopen WhatsApp.",
+                            fontSize = 12.sp, color = Color(0xFFE65100)
+                        )
+                        TextButton(
+                            onClick = { Share.openWhatsAppPermissions(ctx) },
+                            contentPadding = PaddingValues(0.dp)
+                        ) { Text("Open WhatsApp permissions") }
                     }
                 },
                 confirmButton = {
@@ -1052,14 +1163,27 @@ class MainActivity : ComponentActivity() {
                                 "WhatsApp updates their map every few seconds.",
                             fontSize = 12.sp, color = Color.Gray
                         )
+                        Text(
+                            "WhatsApp can't find location or shows the real one? Give WhatsApp Location " +
+                                "permission (Allow all the time) and close & reopen WhatsApp.",
+                            fontSize = 12.sp, color = Color(0xFFE65100)
+                        )
+                        TextButton(
+                            onClick = { Share.openWhatsAppPermissions(ctx) },
+                            contentPadding = PaddingValues(0.dp)
+                        ) { Text("Open WhatsApp permissions") }
                     }
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        if (travelling || startTrip()) {
-                            showLive = false
-                            if (!Share.openWhatsApp(ctx)) toast("WhatsApp is not installed")
+                        showLive = false
+                        val open = {
+                            // Give WhatsApp a moment to receive the fake position before opening it.
+                            mapView?.postDelayed({
+                                if (!Share.openWhatsApp(ctx)) toast("WhatsApp is not installed")
+                            }, 1500) ?: Unit
                         }
+                        if (travelling) withReady { open() } else startTrip { open() }
                     }) { Text(if (travelling) "Open WhatsApp" else "Start trip & open WhatsApp") }
                 },
                 dismissButton = { TextButton(onClick = { showLive = false }) { Text("Cancel") } }
@@ -1173,14 +1297,27 @@ class MainActivity : ComponentActivity() {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("One-time setup", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 SetupStep(1, "Allow location permission", hasPerm.value, "Allow") { askPermissions() }
+                SetupStep(2, "Turn ON device Location", locOn.value, "Turn on") { requestLocationOn(null) }
                 SetupStep(
-                    2, "Turn on Developer options: About phone → tap \"Build number\" 7 times",
+                    3, "Turn on Developer options: About phone → tap \"Build number\" 7 times",
                     devOn.value, "Open"
                 ) { openSettings(Settings.ACTION_DEVICE_INFO_SETTINGS) }
                 SetupStep(
-                    3, "Developer options → \"Select mock location app\" → Fake Location",
-                    mockOn.value, "Open"
-                ) { openSettings(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS) }
+                    4, "Developer options → \"Select mock location app\" → Fake Location",
+                    mockOn.value, "Auto"
+                ) { autoEnableMock() }
+                if (!mockOn.value) {
+                    val clip = LocalClipboardManager.current
+                    val cmd = "adb shell appops set $packageName android:mock_location allow"
+                    Text(
+                        "Have a PC? Run this once to enable it without menus (tap to copy):",
+                        fontSize = 11.sp, color = Color.Gray
+                    )
+                    Text(
+                        cmd, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clickable { clip.setText(AnnotatedString(cmd)); toast("Copied") }
+                    )
+                }
             }
         }
     }

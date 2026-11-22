@@ -92,8 +92,11 @@ class MockLocationService : Service() {
     private var curBearing = 0f
     private var curSpeed = 0f
 
+    private var aliveCount = 0
+
     private val tick = object : Runnable {
         override fun run() {
+            if (aliveCount++ % 10 == 0) keepAlive()
             push()
             handler.postDelayed(this, 1000)
         }
@@ -181,15 +184,29 @@ class MockLocationService : Service() {
         }
         if (providers.isEmpty()) throw SecurityException("no providers")
 
-        // Google Play Services fused location (used by WhatsApp, Maps, most apps).
+        enableFused()
+    }
+
+    /** Google Play Services fused location (used by WhatsApp, Maps, most apps). */
+    @SuppressLint("MissingPermission")
+    private fun enableFused() {
         try {
-            val client = LocationServices.getFusedLocationProviderClient(this)
+            val client = fused ?: LocationServices.getFusedLocationProviderClient(this)
             client.setMockMode(true)
                 .addOnSuccessListener { fused = client }
                 .addOnFailureListener { fused = null }
         } catch (_: Exception) {
             fused = null
         }
+    }
+
+    /** Some phones / Play Services reset mock mode after a while; switch it back on. */
+    @SuppressLint("MissingPermission")
+    private fun keepAlive() {
+        for (p in providers) {
+            try { lm.setTestProviderEnabled(p, true) } catch (_: Exception) { }
+        }
+        enableFused()
     }
 
     @SuppressLint("MissingPermission")
