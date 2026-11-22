@@ -19,6 +19,19 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.10.2
+      - name: Signing key
+        env:
+          KS_B64: ${{ secrets.FAKELOC_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.FAKELOC_KEY_PASS }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "FAKELOC_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "FAKELOC_KEY_PASS=$KS_PASS" >> "$GITHUB_ENV"
+            echo "Using permanent signing key"
+          else
+            echo "::warning::No FAKELOC_KEYSTORE_B64 secret: APK signed with a temporary key (won't update over old installs)"
+          fi
       - name: Build
         run: |
           set -o pipefail

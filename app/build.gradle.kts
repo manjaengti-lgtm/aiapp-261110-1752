@@ -12,15 +12,29 @@ android {
         applicationId = "com.fakelocation.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // Each build gets a higher version so it installs as an update.
+        versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
+        versionName = "1.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
+    }
+
+    // One permanent signing key, so every new APK installs over the old one.
+    val ksFile = System.getenv("FAKELOC_KEYSTORE")?.let { file(it) }
+    signingConfigs {
+        create("release") {
+            if (ksFile != null && ksFile.exists()) {
+                storeFile = ksFile
+                storePassword = System.getenv("FAKELOC_KEY_PASS")
+                keyAlias = "fakelocation"
+                keyPassword = System.getenv("FAKELOC_KEY_PASS")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Signed with the debug key so the release APK installs directly.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (ksFile != null && ksFile.exists()) signingConfigs.getByName("release")
+            else signingConfigs.getByName("debug")
         }
     }
     compileOptions {
