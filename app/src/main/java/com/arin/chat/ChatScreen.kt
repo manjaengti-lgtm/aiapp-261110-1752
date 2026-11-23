@@ -259,7 +259,35 @@ fun ChatScreen(
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
                 if (vm.messages.isEmpty() && !vm.streaming) {
-                    Welcome(project = vm.chatProject?.name, onPick = { input = it })
+                    when {
+                        vm.isRebuildTab -> TabIntro(
+                            title = "Rebuild APK",
+                            summary = "Change an app and get an installable APK back — all on your phone, no REA needed.",
+                            steps = listOf(
+                                "Attach an APK: + → “APK file” (or “Installed app (APK)”).",
+                                "Say what to change, e.g. “decode this into /root/files/rea/test and change the app label”.",
+                                "Arin decodes (APKEditor) → edits → rebuilds → signs.",
+                                "Tap “Rebuild & install” to install the changed app.",
+                            ),
+                            note = "Re-signed apps install alongside the original; server-checked things like logins can’t be removed.",
+                            onPick = { input = it },
+                            starter = "Decode the attached APK into /root/files/rea/test for editing: ",
+                        )
+                        vm.isReaTab -> TabIntro(
+                            title = "Reverse engineering (REA)",
+                            summary = "Analyse an app: decompile to readable code, read its smali, resources and manifest.",
+                            steps = listOf(
+                                "Attach an APK: + → “APK file” or “Installed app (APK)”.",
+                                "Ask about it, e.g. “what permissions does this use?” or “show the main activity”.",
+                                "For deep analysis, install REA from the bar above the message box.",
+                                "To change and rebuild instead, use the Rebuild APK tab.",
+                            ),
+                            note = null,
+                            onPick = { input = it },
+                            starter = "Analyse the attached APK: ",
+                        )
+                        else -> Welcome(project = vm.chatProject?.name, onPick = { input = it })
+                    }
                 } else {
                     Conversation(vm, onEdit = { i -> vm.startEdit(i)?.let { input = it } })
                 }
@@ -307,6 +335,7 @@ private fun TopBar(vm: ChatViewModel, onMenu: () -> Unit, onNew: () -> Unit, onP
                         )
                         Text(
                             vm.modelLabel() + when {
+                                vm.isRebuildTab -> "  ·  Rebuild"
                                 !vm.reaActive() -> ""
                                 vm.reaMissing -> "  ·  REA not installed"
                                 else -> "  ·  REA on"
@@ -393,6 +422,60 @@ private fun Welcome(project: String?, onPick: (String) -> Unit) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
             starters.forEach { s -> AssistChip(onClick = { onPick("$s: ") }, label = { Text(s) }) }
         }
+    }
+}
+
+/** Intro/summary shown on a special tab (Rebuild, REA) when it's empty: what it does and the steps. */
+@Composable
+private fun TabIntro(
+    title: String,
+    summary: String,
+    steps: List<String>,
+    note: String?,
+    onPick: (String) -> Unit,
+    starter: String,
+) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.height(24.dp))
+        ArinMark(size = 48.dp)
+        Spacer(Modifier.height(14.dp))
+        Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            summary,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(20.dp))
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                steps.forEachIndexed { i, s ->
+                    Row(Modifier.padding(vertical = 4.dp)) {
+                        Text("${i + 1}.  ", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                        Text(s, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        }
+        if (note != null) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                note,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+        Spacer(Modifier.height(18.dp))
+        AssistChip(onClick = { onPick(starter) }, label = { Text("Start") })
     }
 }
 
@@ -614,18 +697,22 @@ private fun Composer(
                 )
             }
         }
-        // Reverse-engineering chat only: rebuild the edited app into a signed APK and install it.
+        // Rebuild / REA chat: rebuild the edited app into a signed APK and install it (resumes if interrupted).
         if (vm.isReverseEngineering) {
+            // After a restart, pick up any interrupted rebuild so the button can offer to resume it.
+            LaunchedEffect(vm.isRebuildTab) { if (vm.isRebuildTab) vm.refreshRebuildState() }
             androidx.compose.material3.FilledTonalButton(
                 onClick = { vm.rebuildAndInstall() },
                 enabled = !vm.rebuilding,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
             ) {
-                if (vm.rebuilding) {
-                    androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                    Text("  Rebuilding & signing…")
-                } else {
-                    Text("Rebuild & install")
+                when {
+                    vm.rebuilding -> {
+                        androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Text("  Rebuilding & signing…")
+                    }
+                    vm.resumableRebuild != null -> Text("Resume rebuild")
+                    else -> Text("Rebuild & install")
                 }
             }
         }

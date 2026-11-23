@@ -4,6 +4,9 @@ import android.content.Context
 import com.arin.terminal.Linux
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.io.File
 
 /**
@@ -33,6 +36,39 @@ object ApkRebuild {
 
     /** The most recently changed decoded project, or null if there is none yet. */
     fun newestProject(context: Context): Project? = projects(context).firstOrNull()
+
+    // ---- Resume: a rebuild that was interrupted (app closed, stopped) can continue from the saved project. ----
+    // Everything needed survives on disk: the decoded, edited project lives in Linux at the saved path, so
+    // resuming re-runs only the rebuild+sign step — the slow decode and all edits are never lost or redone.
+
+    @Serializable
+    private data class RebuildState(val projectPath: String, val stage: String) // stage: "running" | "done"
+
+    private val json = Json { ignoreUnknownKeys = true }
+    private fun stateFile(context: Context) = File(context.filesDir, "rebuild-state.json")
+
+    /** Marks a rebuild of [projectPath] as in progress, so it can be resumed if interrupted. */
+    fun markRunning(context: Context, projectPath: String) {
+        runCatching { stateFile(context).writeText(json.encodeToString(RebuildState(projectPath, "running"))) }
+    }
+
+    /** Clears the saved rebuild state (after a successful install). */
+    fun clearState(context: Context) {
+        runCatching { stateFile(context).delete() }
+    }
+
+    /**
+     * If a rebuild was left in progress and its decoded project still exists on disk, returns that project's
+     * path so the UI can offer "Resume rebuild"; otherwise null.
+     */
+    fun resumable(context: Context): String? {
+        val f = stateFile(context)
+        if (!f.exists()) return null
+        val s = runCatching { json.decodeFromString<RebuildState>(f.readText()) }.getOrNull() ?: return null
+        if (s.stage != "running") return null
+        val dir = File(Linux.rootfs(context), s.projectPath.removePrefix("/"))
+        return if (dir.exists()) s.projectPath else null
+    }
 
     class RebuildError(message: String) : Exception(message)
 

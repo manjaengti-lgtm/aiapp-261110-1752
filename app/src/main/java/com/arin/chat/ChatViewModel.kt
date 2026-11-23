@@ -2295,7 +2295,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val project = chatProject
         // REA is active in the chat named "Reverse engineering", or wherever it's switched on from the ⋮ menu.
         val reaChat = reaActive()
-        val useTerminal = terminalOn || reaChat
+        // The Rebuild chat gets the terminal tools (to decode/edit/rebuild APKs) but NOT REA, so it never nags to install REA.
+        val useTerminal = terminalOn || reaChat || isRebuildChat()
         // REA (reverse engineering) is allowed only in the chat named "Reverse engineering"; other chats run normal.
         val servers = mcpServers.filter { it.enabled && (reaChat || it.name != com.arin.mcp.Mcp.REA.name) } +
             (if (reaChat && mcpServers.none { it.name == com.arin.mcp.Mcp.REA.name && it.enabled }) listOf(com.arin.mcp.Mcp.REA) else emptyList())
@@ -2910,7 +2911,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             uris.forEach { uri ->
                 readingFile = uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':') ?: "file"
                 try {
-                    pending += Attachments.read(getApplication(), uri, forTerminal = terminalOn)
+                    // In the REA or Rebuild chat, copy the real file (e.g. an APK) into Linux instead of reading it as text.
+                    pending += Attachments.read(getApplication(), uri, forTerminal = terminalOn || reaActive() || isRebuildChat())
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Throwable) {
@@ -2989,41 +2991,88 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** True when the open chat is the reverse-engineering chat (the only one that may use REA). */
     private fun isReverseEngineeringChat() = title.equals(REVERSE_ENG_TITLE, ignoreCase = true)
 
-    /** For the UI: whether the Rebuild & install button should show (only in the reverse-engineering chat). */
-    val isReverseEngineering: Boolean get() = isReverseEngineeringChat()
+    /** True when the open chat is the Rebuild chat: terminal tools for changing/rebuilding APKs, but no REA. */
+    private fun isRebuildChat() = title.equals(REBUILD_TITLE, ignoreCase = true)
+
+    /**
+     * The Rebuild chat: change an app and get an installable APK, without REA. Has the terminal tools and the
+     * Rebuild & install button, and never shows the "Install REA" bar.
+     */
+    fun openRebuild() {
+        val existing = chats.firstOrNull { it.title.equals(REBUILD_TITLE, ignoreCase = true) }
+        if (existing != null) {
+            open(existing.id)
+        } else {
+            newChat()
+            title = REBUILD_TITLE
+            notice = "Rebuild chat: attach an APK, ask to decode and edit it, then tap Rebuild & install. No REA needed."
+        }
+        refreshRebuildState()
+    }
+
+    /** For the UI: show the Rebuild & install button in both the Rebuild chat and the reverse-engineering chat. */
+    val isReverseEngineering: Boolean get() = isReverseEngineeringChat() || isRebuildChat()
+
+    /** For the UI: the open chat is the Rebuild tab (change & reinstall an app). */
+    val isRebuildTab: Boolean get() = isRebuildChat()
+
+    /** For the UI: the open chat is the Reverse engineering (REA) tab (analyse an app). */
+    val isReaTab: Boolean get() = isReverseEngineeringChat()
 
     /** True while a rebuild+sign+install is running, so the button shows progress and can't be tapped twice. */
     var rebuilding by mutableStateOf(false)
         private set
 
+    /** The decoded-project path of a rebuild that was interrupted, if any — the button offers to resume it. */
+    var resumableRebuild by mutableStateOf<String?>(null)
+        private set
+
+    /** Refreshes [resumableRebuild] from the saved state (an interrupted rebuild whose project still exists). */
+    fun refreshRebuildState() {
+        resumableRebuild = runCatching { com.arin.builder.ApkRebuild.resumable(getApplication()) }.getOrNull()
+    }
+
     /**
      * Rebuilds the most recently edited decoded project into a signed APK and opens Android's installer for it.
      * REA can do the same on request; this button is the one-tap path. [projectPath] overrides which folder to
-     * rebuild (otherwise the newest under /root/files/rea).
+     * rebuild (otherwise a resumable one, else the newest under /root/files/rea).
+     *
+     * Runs in the app scope and saves its state, so it keeps going if you leave the chat and can be resumed if
+     * it's interrupted — the decoded project and your edits stay on disk, so resuming never redoes the decode.
      */
     fun rebuildAndInstall(projectPath: String? = null) {
         if (rebuilding) return
-        viewModelScope.launch {
+        val app = getApplication<Application>()
+        com.arin.ArinApp.scope.launch {
             rebuilding = true
             try {
-                val ctx = getApplication<Application>()
-                val path = projectPath ?: com.arin.builder.ApkRebuild.newestProject(ctx)?.linuxPath
+                val path = projectPath
+                    ?: resumableRebuild
+                    ?: com.arin.builder.ApkRebuild.newestProject(app)?.linuxPath
                 if (path == null) {
-                    notice = "No decoded app to rebuild yet. In this chat, ask REA to decode an app for editing " +
+                    notice = "No decoded app to rebuild yet. Attach an APK and ask to decode it for editing " +
                         "(apkeditor d -i <app.apk> -o /root/files/rea/<name>), make your changes, then tap Rebuild & install."
                     return@launch
                 }
-                notice = "Rebuilding and signing… this can take a minute."
-                val apk = com.arin.builder.ApkRebuild.rebuildAndSign(ctx, path) { line ->
+                // Save state first, so an interruption after this point is resumable.
+                com.arin.builder.ApkRebuild.markRunning(app, path)
+                resumableRebuild = path
+                notice = "Rebuilding and signing… this keeps going if you leave the chat."
+                val apk = com.arin.builder.ApkRebuild.rebuildAndSign(app, path) { line ->
                     val t = line.trim()
                     if (t.isNotEmpty()) notice = t.take(120)
                 }
+                // Done: clear the saved state so the button goes back to "Rebuild & install".
+                com.arin.builder.ApkRebuild.clearState(app)
+                resumableRebuild = null
                 notice = "Rebuilt ${apk.name}. Opening the installer…"
-                com.arin.builder.ApkInstaller.install(ctx, apk)
+                com.arin.builder.ApkInstaller.install(app, apk)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
-                notice = "Rebuild failed: ${e.message}"
+                // Leave the saved state in place so the user can resume or retry from where it stopped.
+                refreshRebuildState()
+                notice = "Rebuild stopped: ${e.message}. Tap Resume rebuild to continue."
             } finally {
                 rebuilding = false
             }
@@ -3574,6 +3623,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
         /** The single chat where REA (reverse engineering) is active. */
         const val REVERSE_ENG_TITLE = "Reverse engineering"
+        const val REBUILD_TITLE = "Rebuild APK"
         /** Key for a temporary (unsaved) chat's running reply. */
         const val TEMP_CHAT = "__temporary_chat__"
 

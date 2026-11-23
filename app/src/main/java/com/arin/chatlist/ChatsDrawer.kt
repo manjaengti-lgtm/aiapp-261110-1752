@@ -162,6 +162,11 @@ fun ChatsDrawer(
                 label = "Reverse engineering (REA)",
                 onClick = { vm.openReverseEngineering(); onPick() },
             )
+            DrawerRow(
+                icon = { Icon(Icons.Filled.Build, contentDescription = null) },
+                label = "Rebuild APK (change & reinstall)",
+                onClick = { vm.openRebuild(); onPick() },
+            )
             DrawerRow(icon = { Icon(Icons.Filled.Info, contentDescription = null) }, label = "Logs", onClick = onLogs)
             DrawerRow(icon = { Icon(Icons.Filled.Settings, contentDescription = null) }, label = "Settings", onClick = onSettings)
         }
