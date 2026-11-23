@@ -259,8 +259,8 @@ fun ChatScreen(
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
                 if (vm.messages.isEmpty() && !vm.streaming) {
-                    when {
-                        vm.isRebuildTab -> TabIntro(
+                    if (vm.isRebuildTab) {
+                        TabIntro(
                             title = "Rebuild APK",
                             summary = "Change an app and get an installable APK back — all on your phone, no REA needed.",
                             steps = listOf(
@@ -273,20 +273,9 @@ fun ChatScreen(
                             onPick = { input = it },
                             starter = "Decode the attached APK into /root/files/rea/test for editing: ",
                         )
-                        vm.isReaTab -> TabIntro(
-                            title = "Reverse engineering (REA)",
-                            summary = "Analyse an app: decompile to readable code, read its smali, resources and manifest.",
-                            steps = listOf(
-                                "Attach an APK: + → “APK file” or “Installed app (APK)”.",
-                                "Ask about it, e.g. “what permissions does this use?” or “show the main activity”.",
-                                "For deep analysis, install REA from the bar above the message box.",
-                                "To change and rebuild instead, use the Rebuild APK tab.",
-                            ),
-                            note = null,
-                            onPick = { input = it },
-                            starter = "Analyse the attached APK: ",
-                        )
-                        else -> Welcome(project = vm.chatProject?.name, onPick = { input = it })
+                    } else {
+                        // REA tab and all normal chats keep the original welcome screen.
+                        Welcome(project = vm.chatProject?.name, onPick = { input = it })
                     }
                 } else {
                     Conversation(vm, onEdit = { i -> vm.startEdit(i)?.let { input = it } })
@@ -697,10 +686,10 @@ private fun Composer(
                 )
             }
         }
-        // Rebuild / REA chat: rebuild the edited app into a signed APK and install it (resumes if interrupted).
+        // Both the REA tab and the Rebuild tab show this: REA analysis and change-&-reinstall work together.
         if (vm.isReverseEngineering) {
             // After a restart, pick up any interrupted rebuild so the button can offer to resume it.
-            LaunchedEffect(vm.isRebuildTab) { if (vm.isRebuildTab) vm.refreshRebuildState() }
+            LaunchedEffect(Unit) { vm.refreshRebuildState() }
             androidx.compose.material3.FilledTonalButton(
                 onClick = { vm.rebuildAndInstall() },
                 enabled = !vm.rebuilding,
