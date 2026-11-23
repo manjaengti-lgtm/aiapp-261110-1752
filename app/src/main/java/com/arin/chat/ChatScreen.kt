@@ -505,6 +505,10 @@ private fun Composer(
     var attachMenu by remember { mutableStateOf(false) }
     var pickApp by remember { mutableStateOf(false) }
     if (pickApp) InstalledAppPicker(onPick = { vm.attachInstalledApp(it); pickApp = false }, onClose = { pickApp = false })
+    // An APK file from storage (e.g. a rebuilt APK, or one downloaded): attached as the real file for REA.
+    val pickApkFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { vm.attach(listOf(it)) }
+    }
     Column(
         Modifier.fillMaxWidth()
             .navigationBarsPadding()
@@ -610,6 +614,21 @@ private fun Composer(
                 )
             }
         }
+        // Reverse-engineering chat only: rebuild the edited app into a signed APK and install it.
+        if (vm.isReverseEngineering) {
+            androidx.compose.material3.FilledTonalButton(
+                onClick = { vm.rebuildAndInstall() },
+                enabled = !vm.rebuilding,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+            ) {
+                if (vm.rebuilding) {
+                    androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Text("  Rebuilding & signing…")
+                } else {
+                    Text("Rebuild & install")
+                }
+            }
+        }
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = RoundedCornerShape(28.dp),
@@ -623,6 +642,13 @@ private fun Composer(
                         DropdownMenuItem(text = { Text("Photos") }, onClick = { attachMenu = false; onPhotos() })
                         DropdownMenuItem(text = { Text("Files (any type)") }, onClick = { attachMenu = false; onFiles() })
                         DropdownMenuItem(text = { Text("Installed app (APK)") }, onClick = { attachMenu = false; pickApp = true })
+                        DropdownMenuItem(
+                            text = { Text("APK file") },
+                            onClick = {
+                                attachMenu = false
+                                pickApkFile.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream", "*/*"))
+                            },
+                        )
                         androidx.compose.material3.HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text((if (vm.webSearch) "✓ " else "") + "Web search") },

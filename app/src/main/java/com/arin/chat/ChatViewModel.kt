@@ -2989,6 +2989,47 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** True when the open chat is the reverse-engineering chat (the only one that may use REA). */
     private fun isReverseEngineeringChat() = title.equals(REVERSE_ENG_TITLE, ignoreCase = true)
 
+    /** For the UI: whether the Rebuild & install button should show (only in the reverse-engineering chat). */
+    val isReverseEngineering: Boolean get() = isReverseEngineeringChat()
+
+    /** True while a rebuild+sign+install is running, so the button shows progress and can't be tapped twice. */
+    var rebuilding by mutableStateOf(false)
+        private set
+
+    /**
+     * Rebuilds the most recently edited decoded project into a signed APK and opens Android's installer for it.
+     * REA can do the same on request; this button is the one-tap path. [projectPath] overrides which folder to
+     * rebuild (otherwise the newest under /root/files/rea).
+     */
+    fun rebuildAndInstall(projectPath: String? = null) {
+        if (rebuilding) return
+        viewModelScope.launch {
+            rebuilding = true
+            try {
+                val ctx = getApplication<Application>()
+                val path = projectPath ?: com.arin.builder.ApkRebuild.newestProject(ctx)?.linuxPath
+                if (path == null) {
+                    notice = "No decoded app to rebuild yet. In this chat, ask REA to decode an app for editing " +
+                        "(apkeditor d -i <app.apk> -o /root/files/rea/<name>), make your changes, then tap Rebuild & install."
+                    return@launch
+                }
+                notice = "Rebuilding and signing… this can take a minute."
+                val apk = com.arin.builder.ApkRebuild.rebuildAndSign(ctx, path) { line ->
+                    val t = line.trim()
+                    if (t.isNotEmpty()) notice = t.take(120)
+                }
+                notice = "Rebuilt ${apk.name}. Opening the installer…"
+                com.arin.builder.ApkInstaller.install(ctx, apk)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                notice = "Rebuild failed: ${e.message}"
+            } finally {
+                rebuilding = false
+            }
+        }
+    }
+
     /** REA is switched on in the open chat but isn't installed/connected: the chat shows an Install REA bar. */
     var reaMissing by mutableStateOf(false)
 

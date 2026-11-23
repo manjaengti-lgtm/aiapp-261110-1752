@@ -192,10 +192,14 @@ object Linux {
      * with apktool; both need a full JDK. REA finds them through REA_JADX_MCP_JAR, JAVA_HOME and
      * REA_APKTOOL_COMMAND, written to ~/.arin/rea.env, which REA's start command loads.
      * JADX version and checksum are REA's pinned ones (docs/guides/android/android-analysis.md).
+     *
+     * For CHANGING an app and getting an installable APK back, two more pure-Java tools go in:
+     * APKEditor (decompiles AND rebuilds with no arm64 aapt2 needed) and uber-apk-signer (zipalign + sign).
+     * A signing key is generated once. [rebuildSignScript] (written to [REBUILD_SIGN_SCRIPT]) ties them together.
      */
     private val androidToolsScript = listOf(
         "#!/bin/bash",
-        "# Installs JDK 21, JADX (headless MCP 0.7.1, REA's pinned version) and apktool for REA's Android tools.",
+        "# Installs JDK 21, JADX (headless MCP 0.7.1), apktool, APKEditor and uber-apk-signer for REA's Android tools.",
         "set -e",
         "export DEBIAN_FRONTEND=noninteractive",
         "if ! command -v javac >/dev/null 2>&1; then",
@@ -217,20 +221,74 @@ object Linux {
         "fi",
         "printf '#!/bin/sh\\nexec java -jar /opt/rea-android/apktool.jar \"\$@\"\\n' > /usr/local/bin/apktool",
         "chmod +x /usr/local/bin/apktool",
+        "# APKEditor: pure-Java decompile/rebuild, so rebuilding works on arm64 without aapt2.",
+        "if [ ! -f APKEditor.jar ]; then",
+        "  URL=\$(curl -fsSL https://api.github.com/repos/REAndroid/APKEditor/releases/latest | grep -o 'https://[^\"]*APKEditor-[^\"]*\\.jar' | head -1)",
+        "  [ -n \"\$URL\" ] || { echo \"Couldn't find the APKEditor download\"; exit 1; }",
+        "  curl -fL -o APKEditor.jar \"\$URL\"",
+        "fi",
+        "printf '#!/bin/sh\\nexec java -jar /opt/rea-android/APKEditor.jar \"\$@\"\\n' > /usr/local/bin/apkeditor",
+        "chmod +x /usr/local/bin/apkeditor",
+        "# uber-apk-signer: pure-Java zipalign + sign.",
+        "if [ ! -f uber-apk-signer.jar ]; then",
+        "  URL=\$(curl -fsSL https://api.github.com/repos/patrickfav/uber-apk-signer/releases/latest | grep -o 'https://[^\"]*uber-apk-signer-[^\"]*\\.jar' | head -1)",
+        "  [ -n \"\$URL\" ] || { echo \"Couldn't find the uber-apk-signer download\"; exit 1; }",
+        "  curl -fL -o uber-apk-signer.jar \"\$URL\"",
+        "fi",
         "JH=\$(dirname \"\$(dirname \"\$(readlink -f \"\$(command -v javac)\")\")\")",
         "mkdir -p /root/.arin",
-        "{ echo \"REA_JADX_MCP_JAR=/opt/rea-android/\$JADX\"; echo \"JAVA_HOME=\$JH\"; echo \"REA_APKTOOL_COMMAND=/usr/local/bin/apktool\"; echo COLUMNS=120; echo LINES=40; } > /root/.arin/rea.env",
+        "# One signing key, reused so each rebuild installs over the previous one.",
+        "KS=/root/.arin/arin-rebuild.keystore",
+        "if [ ! -f \"\$KS\" ]; then",
+        "  keytool -genkeypair -v -keystore \"\$KS\" -storepass arinrebuild -keypass arinrebuild -alias arin -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=Arin, OU=Arin, O=Arin, L=Arin, ST=Arin, C=IN'",
+        "fi",
+        "{ echo \"REA_JADX_MCP_JAR=/opt/rea-android/\$JADX\"; echo \"JAVA_HOME=\$JH\"; echo \"REA_APKTOOL_COMMAND=/usr/local/bin/apktool\"; echo \"REA_APKEDITOR_COMMAND=/usr/local/bin/apkeditor\"; echo COLUMNS=120; echo LINES=40; } > /root/.arin/rea.env",
         "java -version 2>&1 | head -1",
         "apktool --version 2>/dev/null | head -1",
-        "echo \"Android tools ready: \$JADX, apktool, JAVA_HOME=\$JH\"",
+        "echo \"Android tools ready: \$JADX, apktool, APKEditor, uber-apk-signer, JAVA_HOME=\$JH\"",
         "# REA must restart to pick up the new settings; Arin starts it again on the next tool call.",
         "pkill -f mcp-bridge.mjs || true",
     ).joinToString("\n", postfix = "\n")
 
-    /** Installs JDK, JADX and apktool so REA's APK tools work. */
+    /** Helper (inside Linux) that rebuilds a decoded APKEditor project and signs it. */
+    const val REBUILD_SIGN_SCRIPT = "/root/.arin/rebuild-sign.sh"
+
+    /**
+     * Rebuilds a decoded APKEditor project (a folder) into an APK and signs it, or just signs an APK that is
+     * already built. Prints the path of the finished, installable APK on its last line.
+     * Usage: bash rebuild-sign.sh <decoded-dir|apk> [out.apk]
+     */
+    private val rebuildSignScript = """
+        #!/bin/bash
+        set -e
+        IN=${'$'}{1:?usage: rebuild-sign.sh <decoded-dir|apk> [out.apk]}
+        OUT=${'$'}{2:-/root/files/rebuilt-signed.apk}
+        KS=/root/.arin/arin-rebuild.keystore
+        [ -e "${'$'}IN" ] || { echo "No such path: ${'$'}IN" >&2; exit 1; }
+        [ -f "${'$'}KS" ] || { echo "No signing key yet — install the Android tools first." >&2; exit 1; }
+        work=${'$'}(mktemp -d)
+        if [ -d "${'$'}IN" ]; then
+          built="${'$'}work/rebuilt.apk"
+          echo "Rebuilding ${'$'}IN with APKEditor…" >&2
+          java -jar /opt/rea-android/APKEditor.jar b -f -i "${'$'}IN" -o "${'$'}built" >&2
+        else
+          built="${'$'}IN"
+        fi
+        echo "Signing…" >&2
+        java -jar /opt/rea-android/uber-apk-signer.jar --allowResign -a "${'$'}built" --ks "${'$'}KS" --ksAlias arin --ksPass arinrebuild --ksKeyPass arinrebuild --out "${'$'}work" >&2
+        signed=${'$'}(ls "${'$'}work"/*-signed*.apk 2>/dev/null | head -1)
+        [ -n "${'$'}signed" ] || { echo "Signing produced no APK." >&2; exit 1; }
+        mkdir -p "${'$'}(dirname "${'$'}OUT")"
+        cp "${'$'}signed" "${'$'}OUT"
+        echo "${'$'}OUT"
+    """.trimIndent() + "\n"
+
+    /** Installs JDK, JADX, apktool, APKEditor and uber-apk-signer, and writes the rebuild helper. */
     suspend fun installAndroidTools(context: Context, log: (String) -> Unit): Termux.Result {
-        log("Installing REA's Android tools (JDK 21, JADX, apktool)…")
+        log("Installing REA's Android tools (JDK 21, JADX, apktool, APKEditor, signer)…")
         configure(context)
+        File(rootfs(context), "root/.arin").mkdirs()
+        File(rootfs(context), "root/.arin/rebuild-sign.sh").writeText(rebuildSignScript)
         return run(context, "bash $ANDROID_TOOLS_SCRIPT", timeoutMs = 30 * 60_000L, onOutput = log)
     }
 
@@ -513,7 +571,12 @@ object Shell {
                     "Install Android build tools); meanwhile use Build mode (<build>), which builds on GitHub. ") +
                 "If an REA Android/APK tool says JADX, a JDK or apktool is missing, run: bash ${Linux.ANDROID_TOOLS_SCRIPT} " +
                 "(then call the tool again; REA restarts automatically). Other APK tools you can install yourself: " +
-                "pip install androguard, or use unzip/apktool on files in /root/files."
+                "pip install androguard, or use unzip/apktool on files in /root/files. " +
+                "To CHANGE an app and produce an installable APK: decode it for editing with apkeditor d -i <app.apk> -o " +
+                "/root/files/rea/<name>, edit the smali/resources under that folder, then run bash ${Linux.REBUILD_SIGN_SCRIPT} " +
+                "/root/files/rea/<name> — it rebuilds (APKEditor, no aapt2 needed) and signs (uber-apk-signer), printing the " +
+                "finished signed APK path on its last line. The person can install that APK from the Rebuild & install button, " +
+                "or you can tell them the path. Re-signed APKs install as a separate app; they can't update a Play-signed install."
         } else {
             "Termux on Android (${System.getProperty("os.arch")}, no root), home ~ = ${Termux.HOME}. Install packages with pkg install -y."
         }
