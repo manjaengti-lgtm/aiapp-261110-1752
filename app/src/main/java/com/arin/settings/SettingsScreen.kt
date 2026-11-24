@@ -525,8 +525,10 @@ private fun LinuxSettings(vm: ChatViewModel) {
             if (vm.mcpServers.none { it.name == com.arin.mcp.Mcp.REA.name && com.arin.mcp.Mcp.status(it.name) != null }) {
                 OutlinedButton(onClick = { vm.setUpRea() }) { Text(if (vm.linuxReady) "Install REA" else "Install Linux + REA") }
             }
-            if (!vm.androidBuildReady) {
-                OutlinedButton(onClick = { vm.installDevTools() }) { Text("Install Android build tools (JDK, Gradle, SDK)") }
+            if (vm.linuxReady || !vm.androidBuildReady) {
+                OutlinedButton(onClick = { vm.installDevTools() }) {
+                    Text(if (vm.androidBuildReady) "Update Android build tools" else "Install Android build tools (JDK, Gradle, SDK)")
+                }
             }
             if (vm.linuxReady && vm.mcpServers.any { it.name == com.arin.mcp.Mcp.REA.name }) {
                 OutlinedButton(onClick = { vm.repairRea() }) { Text("Repair REA") }

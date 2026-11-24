@@ -41,7 +41,14 @@ mkdir -p $ANDROID_HOME/arin
 A2=$ANDROID_HOME/arin/aapt2
 AIDL=$ANDROID_HOME/arin/aidl
 ZA=$ANDROID_HOME/arin/zipalign
-if [ "$ARCH" != "x86_64" ] && ! "$A2" version >/dev/null 2>&1; then
+# Fetch if ANY of the three is missing (so an existing install that only has aapt2 still gains aidl/zipalign).
+NEED=0
+if [ "$ARCH" != "x86_64" ]; then
+  "$A2" version >/dev/null 2>&1 || NEED=1
+  [ -x "$AIDL" ] || NEED=1
+  [ -x "$ZA" ] || NEED=1
+fi
+if [ "$NEED" = 1 ]; then
   echo "Getting native aapt2/aidl/zipalign for $ARCH…"
   for REPO in lzhiyong/android-sdk-tools hamza72x/android-sdk-linux-arm64; do
     URL=$(curl -fsSL "https://api.github.com/repos/$REPO/releases" | grep -o 'https://[^"]*\.\(zip\|tar\.gz\|tar\.xz\)' | grep -i "$ARCH" | grep -iv 'windows\|darwin\|macos' | head -1 || true)
@@ -50,23 +57,24 @@ if [ "$ARCH" != "x86_64" ] && ! "$A2" version >/dev/null 2>&1; then
     curl -fsSL -o /tmp/a2/pkg "$URL" || continue
     case "$URL" in *.zip) unzip -q -o /tmp/a2/pkg -d /tmp/a2 ;; *) tar -xf /tmp/a2/pkg -C /tmp/a2 ;; esac
     for T in aapt2 aidl zipalign; do
+      [ -x "$ANDROID_HOME/arin/$T" ] && continue
       F=$(find /tmp/a2 -type f -name "$T" | head -1)
       [ -n "$F" ] && { cp "$F" "$ANDROID_HOME/arin/$T"; chmod +x "$ANDROID_HOME/arin/$T"; }
     done
-    "$A2" version >/dev/null 2>&1 && { echo "native tools from $REPO"; break; }
+    "$A2" version >/dev/null 2>&1 && [ -x "$AIDL" ] && [ -x "$ZA" ] && { echo "native tools from $REPO"; break; }
   done
   if ! "$A2" version >/dev/null 2>&1; then
     echo "Trying Ubuntu's aapt2…"
     apt-get install -y --no-install-recommends aapt >/dev/null 2>&1 || true
     command -v aapt2 >/dev/null 2>&1 && ln -sf "$(command -v aapt2)" "$A2"
   fi
-  # Drop native aidl/zipalign over the x86-64 copies inside each build-tools dir (used for AIDL + packaging).
-  if [ -d "$ANDROID_HOME/build-tools" ]; then
-    for BT in "$ANDROID_HOME"/build-tools/*/; do
-      [ -x "$AIDL" ] && cp "$AIDL" "${BT}aidl" 2>/dev/null || true
-      [ -x "$ZA" ] && cp "$ZA" "${BT}zipalign" 2>/dev/null || true
-    done
-  fi
+fi
+# Drop native aidl/zipalign over the x86-64 copies inside each build-tools dir (used for AIDL + packaging).
+if [ "$ARCH" != "x86_64" ] && [ -d "$ANDROID_HOME/build-tools" ]; then
+  for BT in "$ANDROID_HOME"/build-tools/*/; do
+    [ -x "$AIDL" ] && cp "$AIDL" "${BT}aidl" 2>/dev/null || true
+    [ -x "$ZA" ] && cp "$ZA" "${BT}zipalign" 2>/dev/null || true
+  done
 fi
 
 # 4. A debug keystore so debug builds always sign (AGP usually creates this itself; make sure it's there).
