@@ -30,6 +30,9 @@ class ArinApp : Application() {
                 description = "Shown while Arin is writing a reply"
             },
         )
+        // The analyst lane (the "Talk to Claude" phone line) is restarted on every app start, so the
+        // bridge comes back after a reboot instead of dying silently. It only touches Linux if it's installed.
+        com.arin.analyst.AnalystSetup.onAppStart(this)
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityStarted(activity: Activity) { visibleActivities++ }
             override fun onActivityStopped(activity: Activity) { visibleActivities-- }
