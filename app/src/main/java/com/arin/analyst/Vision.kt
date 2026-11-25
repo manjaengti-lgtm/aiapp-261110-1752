@@ -112,7 +112,8 @@ object Vision {
         if (run.exitCode != 0) "" else run.stdout.trim()
     }
 
-    private fun duration(context: Context, file: File): Int {
+    /** The clip's length in seconds (0 when it can't be read). Runs a command, so it suspends. */
+    private suspend fun duration(context: Context, file: File): Int {
         val out = runCatching {
             Linux.run(context, "ffprobe -v error -show_entries format=duration -of csv=p=0 ${quote("/root/files/" + file.name)}", timeoutMs = 30_000L).stdout
         }.getOrDefault("")

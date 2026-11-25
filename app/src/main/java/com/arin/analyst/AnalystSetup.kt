@@ -81,7 +81,7 @@ object AnalystSetup {
     private var staged = false
 
     @Synchronized
-    fun ensure(context: Context) {
+    suspend fun ensure(context: Context) {
         if (!Linux.installed(context)) return
         val root = Linux.rootfs(context)
         val stamp = File(root, "$BASE/.staged")
@@ -131,7 +131,7 @@ object AnalystSetup {
         file.writeText(kept.trimEnd() + "\n\n" + MARK_BEGIN + "\n" + block.trimEnd() + "\n" + MARK_END + "\n")
     }
 
-    private fun writeSkills(context: Context, root: File) {
+    private suspend fun writeSkills(context: Context, root: File) {
         val skill = runCatching { readAssetBlock("analyst/arin-analyst.SKILL.md") }.getOrNull() ?: return
         val section = runCatching { readAssetBlock("analyst/rea-analyst-section.md") }.getOrNull() ?: ""
         val targets = listOf(

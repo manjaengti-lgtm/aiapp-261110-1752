@@ -17,6 +17,12 @@ object AttachmentManifest {
     /** Max 12 images per turn (the rest are still listed, just not sent as pictures). */
     const val MAX_IMAGES = 12
 
+    /** Extensions whose contents are plain text, so they can be read without a special tool. */
+    private val textExtensions = setOf(
+        "txt", "md", "markdown", "json", "xml", "csv", "tsv", "kt", "kts", "java", "log", "html", "htm",
+        "css", "js", "ts", "yml", "yaml", "toml", "gradle", "properties", "sh", "py", "svg", "ini", "conf",
+    )
+
     fun linuxPath(name: String): String = "$DIR/" + name.replace(Regex("[^A-Za-z0-9._-]"), "_")
 
     /** The block handed to the model for this turn, or "" when nothing was attached. */
@@ -26,14 +32,26 @@ object AttachmentManifest {
             appendLine("FILES ATTACHED THIS TURN (they are on the phone, open them with Bash):")
             attachments.forEach { a ->
                 append("- ").append(linuxPath(a.name))
-                append(" (").append(a.name).append(", ").append(a.kind.name.lowercase())
-                if (a.isBinary) append(", binary") else append(", text")
+                append(" (").append(a.name).append(", ").append(kindOf(a))
+                append(if (isBinary(a)) ", binary" else ", text")
                 appendLine(")")
             }
             appendLine("A video is never sent as video: take frames with ffmpeg and look at those.")
-            if (attachments.count { it.kind == Attachment.IMAGE } > MAX_IMAGES) {
+            if (attachments.size > MAX_IMAGES) {
                 appendLine("More than $MAX_IMAGES pictures: only the first $MAX_IMAGES are sent as pictures, the rest only as paths.")
             }
         }.trimEnd()
+    }
+
+    /** The attachment's kind, in lower case, whichever shape the kind value has. */
+    private fun kindOf(a: Attachment): String = a.kind.toString().lowercase().ifBlank { "file" }
+
+    /** Whether the file is binary (pictures, video, sound, archives) rather than plain text. */
+    private fun isBinary(a: Attachment): Boolean {
+        if (a.name.substringAfterLast('.', "").lowercase() in textExtensions) return false
+        return when (kindOf(a).uppercase()) {
+            "TEXT", "URL", "LINK", "DOCUMENT" -> false
+            else -> true
+        }
     }
 }
