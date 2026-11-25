@@ -6,6 +6,8 @@ import com.arin.CrashLog
 import com.arin.terminal.Linux
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -80,13 +82,19 @@ object AnalystSetup {
 
     private var staged = false
 
-    @Synchronized
-    suspend fun ensure(context: Context) {
+    /** One setup at a time: @Synchronized can't be used on a suspend function, so a mutex does it. */
+    private val setupLock = Mutex()
+
+    suspend fun ensure(context: Context) = setupLock.withLock { ensureLocked(context) }
+
+    private suspend fun ensureLocked(context: Context) {
         if (!Linux.installed(context)) return
         val root = Linux.rootfs(context)
         val stamp = File(root, "$BASE/.staged")
         val version = ArinApp.versionLabel(context)
-        if (staged && stamp.readText().orEmpty() == version) return
+        // readText() throws when the file isn't there yet, so read it defensively.
+        val done = runCatching { stamp.readText().trim() }.getOrNull()
+        if (staged && done == version) return
 
         val dir = File(root, BASE).apply { mkdirs() }
         copyAsset(context, "analyst/analyst.sh", File(dir, "analyst.sh"), executable = true)
