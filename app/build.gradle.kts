@@ -17,8 +17,8 @@ android {
         targetSdk = 28
         // Higher than the 925634 already installed, so a new build installs over it.
         // The GitHub workflow raises this further on every run.
-        versionCode = 925700
-        versionName = "0.15.7"
+        versionCode = 925701
+        versionName = "0.15.8"
     }
 
     signingConfigs {
@@ -48,7 +48,7 @@ android {
 
     lint {
         disable += "ExpiredTargetSdkVersion"
-        disable += "OldTargetApi"
+        disable += "OldApi"
     }
 
     buildFeatures {
